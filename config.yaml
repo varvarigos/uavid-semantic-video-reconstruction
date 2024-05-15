@@ -1,0 +1,75 @@
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: outputs/ground_truth_upper_bound/${now:%Y-%m-%d__%H-%M-%S}
+
+_target_: config.TrainerConfig
+
+lr:
+  _target_: config.LearningRateConfig
+  unet: 1e-5
+  controlnet: 1e-4
+  scale: True
+  
+lr_scheduler:
+  _target_: config.LRSchedulerConfig
+  scheduler_type: "constant"
+  warmup_steps: 500
+  num_cycles: 1
+  power: 1.0
+
+optimizer:
+  _target_: config.OptimizerConfig
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_weight_decay: 1e-2
+  adam_epsilon: 1e-08
+
+dataset:
+  _target_: config.DatasetConfig
+  dataset_name: "uavid"
+  dataset_path: "/teamspace/studios/this_studio/uavid"
+  resolution: 512
+  center_crop: True
+  max_previous_frames: 1 # null
+
+dataloader:
+  _target_: config.DataloaderConfig
+  train_batch_size: 6
+  val_batch_size: 4
+  num_workers: 4
+
+model:
+  _target_: config.ModelConfig
+  model_name: "lambdalabs/sd-image-variations-diffusers"
+  model_revision: "v2.0"
+  image_encoder_name: "lambdalabs/sd-image-variations-diffusers"
+  image_encoder_revision: "v2.0"
+  train_unet: True
+  train_control_net: True
+  lora_rank: 4
+  use_ip_adapter: False
+  ip_adapter_scale: 0.8
+
+gradient_accumulation_steps: 1
+num_train_epochs: 350
+max_train_steps: null
+resume_from_checkpoint: null
+checkpointing_steps: 500
+checkpoints_total_limit: null
+prediction_steps: 100
+predictions_dir_name: "predictions"
+
+max_grad_norm: 1.0
+
+output_dir: "."
+local_rank: -1
+
+num_processes: 1
+
+logging_dir_name: "logs"
+allow_tf32: False
+logger: "tensorboard"
+
+overrode_max_train_steps: False

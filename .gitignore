@@ -1,0 +1,8 @@
+.vscode
+.idea
+uavid/
+.lightning_studio
+outputs
+__pycache__
+project_controlnet_fine_tuned.ipynb
+average_project_controlnet_fine_tuned.ipynb
