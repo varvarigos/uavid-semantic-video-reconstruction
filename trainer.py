@@ -54,39 +54,43 @@ class Trainer:
         optimizer,
         lr_scheduler,
     ):
+
         # Prepare everything with our `accelerator`.
-        if self.cfg.model.train_control_net and not self.cfg.model.train_unet:
-            (
-                model.controlnet.controlnet,
-                optimizer,
-                train_dataloader,
-                lr_scheduler,
-            ) = self.accelerator.prepare(
-                model.controlnet.controlnet,
-                optimizer,
-                train_dataloader,
-                lr_scheduler,
-            )
-        elif self.cfg.model.train_unet and not self.cfg.model.train_control_net:
-            model.unet, optimizer, train_dataloader, lr_scheduler = (
-                self.accelerator.prepare(
-                    model.unet, optimizer, train_dataloader, lr_scheduler
-                )
-            )
-        else:
-            (
-                model.unet,
-                model.controlnet.controlnet,
-                optimizer,
-                train_dataloader,
-                lr_scheduler,
-            ) = self.accelerator.prepare(
-                model.unet,
-                model.controlnet.controlnet,
-                optimizer,
-                train_dataloader,
-                lr_scheduler,
-            )
+        # to_prepare = (
+        #     ([model.mapper] if self.cfg.mapper.train else [])
+        #     + ([model.controlnet] if self.cfg.model.train_control_net else [])
+        #     + ([model.unet] if self.cfg.model.train_unet else [])
+        #     + [
+        #         optimizer,
+        #         train_dataloader,
+        #         lr_scheduler,
+        #     ]
+        # )
+        # prepared = list(self.accelerator.prepare(*to_prepare))
+        # if self.cfg.mapper.train:
+        #     model.mapper = prepared.pop(0)
+        # if self.cfg.model.train_control_net:
+        #     model.controlnet = prepared.pop(0)
+        # if self.cfg.model.train_unet:
+        #     model.unet = prepared.pop(0)
+        # optimizer = prepared.pop(0)
+        # train_dataloader = prepared.pop(0)
+        # lr_scheduler = prepared.pop(0)
+        (
+            model.mapper,
+            model.controlnet,
+            model.unet,
+            optimizer,
+            train_dataloader,
+            lr_scheduler,
+        ) = self.accelerator.prepare(
+            model.mapper,
+            model.controlnet,
+            model.unet,
+            optimizer,
+            train_dataloader,
+            lr_scheduler,
+        )
 
         self.cfg.post_prepare_init(train_dataloader)
 
@@ -119,6 +123,11 @@ class Trainer:
         self.logger.info(
             f"  Trainable ControlNet LoRA Parameters: {controlnet_param_stats['trainable']}/{controlnet_param_stats['all']}"
         )
+        if self.cfg.model.use_mapper:
+            mapper_param_stats = get_parameters_stats(model.mapper.parameters())
+            self.logger.info(
+                f"  Trainable Mapper Parameters: {mapper_param_stats['trainable']}/{mapper_param_stats['all']}"
+            )
 
         self.global_step = 0
         first_epoch = 0
@@ -174,6 +183,22 @@ class Trainer:
         for self.epoch in range(first_epoch, self.cfg.num_train_epochs):
             model.train()
 
+            if self.epoch < 10:
+                optimizer.param_groups[0]["lr"] = 0
+                optimizer.param_groups[1]["lr"] = 0
+                lr_scheduler.optimizers[0].param_groups[0]["lr"] = 0
+                lr_scheduler.optimizers[0].param_groups[1]["lr"] = 0
+            else:
+                optimizer.param_groups[0]["lr"] = self.cfg.lr.controlnet
+                optimizer.param_groups[1]["lr"] = self.cfg.lr.unet
+                lr_scheduler.optimizers[0].param_groups[0][
+                    "lr"
+                ] = self.cfg.lr.controlnet
+                lr_scheduler.optimizers[0].param_groups[1][
+                    "lr"
+                ] = self.cfg.lr.unet
+                # optimizer.param_groups[2]["lr"] = 0
+
             total_loss = 0
             for step, batch in enumerate(train_dataloader):
                 with self.accelerator.accumulate(model):
@@ -225,16 +250,22 @@ class Trainer:
                                 model=model, val_dataloader=val_dataloder
                             )
                             model.train()
+                lrs = lr_scheduler.get_last_lr()
                 logs = (
                     {"loss": loss.detach().item()}
                     | (
-                        {"lr_unet": lr_scheduler.get_last_lr()[0]}
+                        {"lr_unet": lrs.pop(0)}
                         if self.cfg.model.train_unet
                         else {}
                     )
                     | (
-                        {"lr_cntrl": lr_scheduler.get_last_lr()[-1]}
+                        {"lr_cntrl": lrs.pop(0)}
                         if self.cfg.model.train_control_net
+                        else {}
+                    )
+                    | (
+                        {"lr_mapper": lrs.pop(0)}
+                        if self.cfg.mapper.train and self.cfg.model.use_mapper
                         else {}
                     )
                 )
@@ -340,6 +371,11 @@ class Trainer:
                 # encoder_hidden_states = model.image_encoder(
                 #     batch["pixel_values_clip"]
                 # ).image_embeds.unsqueeze(1)
+
+                if self.cfg.model.use_mapper:
+                    encoder_hidden_states = model.mapper(
+                        encoder_hidden_states.to(dtype=model.mapper.dtype)
+                    ).to(dtype=model.image_encoder.dtype)
 
                 seg_maps.extend(tensor_to_pil(batch["segmentation_mask"]))
                 gt_images.extend(tensor_to_pil(batch["pixel_values"]))

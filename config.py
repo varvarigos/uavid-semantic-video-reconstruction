@@ -1,6 +1,7 @@
 import math
 from dataclasses import dataclass, field
-from datetime import datetime
+
+# from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -9,9 +10,35 @@ from torch.utils.data import DataLoader
 
 
 @dataclass
+class MapperConfig:
+    norm_layer: torch.nn.Module = field(init=False)
+    activation_layer: torch.nn.Module = field(init=False)
+    in_channels: int = 768
+    norm_layer_type: str = "layernorm"
+    hidden_channels: list = field(default_factory=lambda: [768])
+    activation_layer_type: str = "relu"
+    inplace: bool | None = None
+    bias: bool = True
+    dropout: float = 0.0
+    train: bool = True
+
+    def __post_init__(self):
+        if self.norm_layer_type == "layernorm":
+            self.norm_layer = torch.nn.LayerNorm
+        else:
+            self.norm_layer = None
+
+        if self.activation_layer_type == "relu":
+            self.activation_layer = torch.nn.ReLU
+        else:
+            self.activation_layer = None
+
+
+@dataclass
 class LearningRateConfig:
     unet: float = 1e-3
     controlnet: float = 1e-4
+    mapper: float = 7.5e-3
 
     scale: bool = True
 
@@ -63,6 +90,7 @@ class ModelConfig:
     lora_rank: int = 4
     use_ip_adapter: bool = False
     ip_adapter_scale: float | None = None
+    use_mapper: bool = True
 
 
 @dataclass
@@ -90,6 +118,7 @@ class TrainerConfig:
     allow_tf32: bool = False
     logger: str = "tensorboard"
 
+    mapper: MapperConfig = field(default_factory=MapperConfig)
     lr: LearningRateConfig = field(default_factory=LearningRateConfig)
     lr_scheduler: LRSchedulerConfig = field(default_factory=LRSchedulerConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)

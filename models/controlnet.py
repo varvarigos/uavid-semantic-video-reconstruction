@@ -49,6 +49,14 @@ class ControlNet(torch.nn.Module):
                 p for p in self.controlnet.parameters() if p.requires_grad
             ]
 
+    @property
+    def device(self):
+        return next(self.parameters()).device
+
+    @property
+    def dtype(self):
+        return next(self.parameters()).dtype
+
     def __call__(self, *args, **kwargs):
         return self.controlnet(*args, **kwargs)
 

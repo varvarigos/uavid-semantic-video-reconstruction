@@ -5,6 +5,7 @@ from peft import LoraConfig
 from torch import nn
 
 from .controlnet import ControlNet
+from .mapper import Mapper
 
 
 class StableDiffusion1x(nn.Module):
@@ -17,6 +18,7 @@ class StableDiffusion1x(nn.Module):
         controlnet: ControlNet | None = None,
         train_lora_adapter: bool = False,
         lora_rank: int = 4,
+        mapper: Mapper | None = None,
     ):
         super().__init__()
 
@@ -36,6 +38,7 @@ class StableDiffusion1x(nn.Module):
             subfolder="unet",
         )
         self.controlnet = controlnet
+        self.mapper = mapper
 
         # We only train the additional adapter LoRA layers
         self.vae.requires_grad_(False)
@@ -69,14 +72,18 @@ class StableDiffusion1x(nn.Module):
 
     @property
     def trainable_parameters(self):
-        return self.unet_trainable_parameters + (
-            self.controlnet.trainable_parameters if self.controlnet else []
+        return (
+            self.unet_trainable_parameters
+            + (self.controlnet.trainable_parameters if self.controlnet else [])
+            + (self.mapper.trainable_parameters if self.mapper else [])
         )
 
     def train(self, mode=True):
         self.unet.train(mode)
         if self.controlnet and self.controlnet.trainable_parameters:
             self.controlnet.train(mode)
+        if self.mapper and self.mapper.trainable_parameters:
+            self.mapper.train(mode)
         self.vae.train(False)
 
     def forward(self, x):

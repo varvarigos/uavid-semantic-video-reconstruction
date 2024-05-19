@@ -10,7 +10,7 @@ from config import (  # DataloaderConfig,; DatasetConfig,; LearningRateConfig,; 
     TrainerConfig,
 )
 from datasets import UavidDatasetWithTransform, uavid_collate_fn
-from models import ControlNet, StableDiffusion1xImageVariation
+from models import ControlNet, Mapper, StableDiffusion1xImageVariation
 from trainer import Trainer
 
 # cs = ConfigStore.instance()
@@ -49,6 +49,20 @@ def main(cfg: TrainerConfig) -> None:
         max_previous_frames=cfg.dataset.max_previous_frames,
     )
 
+    if cfg.model.use_mapper:
+        mapper = Mapper(
+            in_channels=cfg.mapper.in_channels,  # Number of input features
+            hidden_channels=cfg.mapper.hidden_channels,  # List specifying the size of each hidden layer
+            norm_layer=cfg.mapper.norm_layer,  # No normalization layer
+            activation_layer=cfg.mapper.activation_layer,  # Using ReLU as the activation function
+            inplace=cfg.mapper.inplace,  # In-place operation for activation
+            bias=cfg.mapper.bias,  # Using bias in linear layers
+            dropout=cfg.mapper.dropout,  # No dropout
+            device=cfg.device,
+            dtype=cfg.dtype,
+            train_mapper=cfg.mapper.train,
+        )
+
     # Model creation
     model = StableDiffusion1xImageVariation(
         model_name=cfg.model.model_name,
@@ -65,6 +79,7 @@ def main(cfg: TrainerConfig) -> None:
             train_lora_adapter=cfg.model.train_control_net,
             lora_rank=cfg.model.lora_rank,
         ),
+        mapper=mapper if cfg.model.use_mapper else None,
     )
 
     # Enable TF32 for faster training on Ampere GPUs,
@@ -74,6 +89,16 @@ def main(cfg: TrainerConfig) -> None:
 
     # Optimizer creation
     params_to_optimize = []
+    if cfg.model.train_unet:
+        params_to_optimize.append(
+            {
+                "params": model.unet_trainable_parameters,
+                "lr": cfg.lr.unet
+                * cfg.gradient_accumulation_steps
+                * cfg.dataloader.train_batch_size
+                * cfg.num_processes,
+            }
+        )
     if cfg.model.train_control_net:
         params_to_optimize.append(
             {
@@ -84,11 +109,11 @@ def main(cfg: TrainerConfig) -> None:
                 * cfg.num_processes,
             }
         )
-    if cfg.model.train_unet:
+    if cfg.model.use_mapper:
         params_to_optimize.append(
             {
-                "params": model.unet_trainable_parameters,
-                "lr": cfg.lr.unet
+                "params": model.mapper.parameters(),
+                "lr": cfg.lr.mapper
                 * cfg.gradient_accumulation_steps
                 * cfg.dataloader.train_batch_size
                 * cfg.num_processes,
@@ -119,6 +144,7 @@ def main(cfg: TrainerConfig) -> None:
         indices=[0, 5, 10, 15],  # , 20, 25, 30, 35, 40, 45, 50, 55, 60],
         max_previous_frames=cfg.dataset.max_previous_frames,
     )
+
     val_dataloader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=cfg.dataloader.val_batch_size,
@@ -139,7 +165,11 @@ def main(cfg: TrainerConfig) -> None:
 
     trainer = Trainer(cfg)
     trainer.fit(
-        model, train_dataloader, val_dataloader, optimizer, lr_scheduler
+        model,
+        train_dataloader,
+        val_dataloader,
+        optimizer,
+        lr_scheduler,
     )
 
 

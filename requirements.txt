@@ -9,3 +9,5 @@ albumentations
 hydra-core
 rich
 tensorboard
+torchmetrics
+timesformer

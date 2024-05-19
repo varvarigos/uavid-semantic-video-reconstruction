@@ -56,6 +56,7 @@ def main(cfg: TrainerConfig) -> None:
         indices=[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60],
         max_previous_frames=cfg.dataset.max_previous_frames,
     )
+
     val_dataloader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=cfg.dataloader.val_batch_size,
@@ -98,8 +99,8 @@ def main(cfg: TrainerConfig) -> None:
     model.controlnet.requires_grad_(False)
     model.eval()
     trainer.accelerator.load_state(
-        # "/teamspace/studios/this_studio/outputs/averaging/2024-05-15__02-00-15/checkpoints/checkpoint_5"
-        "/teamspace/studios/this_studio/outputs/2024-05-14__18-04-13/single_frame_exp_2_350epochs/checkpoints/checkpoint_9"
+        "/teamspace/studios/this_studio/outputs/averaging/2024-05-15__02-00-15/checkpoints/checkpoint_5"
+        # "/teamspace/studios/this_studio/outputs/2024-05-14__18-04-13/single_frame_exp_2_350epochs/checkpoints/checkpoint_9"
     )
     trainer.validation(model, val_dataloader)
 

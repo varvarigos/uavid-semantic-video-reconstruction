@@ -3,6 +3,7 @@ from torch.functional import F
 from transformers import CLIPVisionModelWithProjection
 
 from .controlnet import ControlNet
+from .mapper import Mapper
 from .stable_diffusion_1x import StableDiffusion1x
 
 
@@ -18,6 +19,7 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
         controlnet: ControlNet | None = None,
         train_lora_adapter: bool = False,
         lora_rank: int = 4,
+        mapper: Mapper | None = None,
     ):
         super().__init__(
             model_name,
@@ -27,6 +29,7 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
             controlnet,
             train_lora_adapter,
             lora_rank,
+            mapper,
         )
 
         self.image_encoder = CLIPVisionModelWithProjection.from_pretrained(
@@ -89,6 +92,11 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
             [i.mean(dim=0) for i in encoder_hidden_states]  # tensor[1 x F]
         )  # tensor[batch_size x 1 x F]
 
+        if self.mapper:
+            encoder_hidden_states = self.mapper(
+                encoder_hidden_states.to(dtype=self.mapper.dtype)
+            )
+
         ### FINISH --- FROM MANY PREVIOUS FRAMES TO A SINGLE EMBEDDING -- AGGREGATION
 
         current_segmentation_map = batch["segmentation_mask"]
@@ -97,7 +105,9 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
             down_block_res_samples, mid_block_res_sample = self.controlnet(
                 noisy_model_input,
                 timesteps,
-                encoder_hidden_states=encoder_hidden_states,
+                encoder_hidden_states=encoder_hidden_states.to(
+                    self.controlnet.dtype
+                ),
                 controlnet_cond=current_segmentation_map,
                 return_dict=False,
             )

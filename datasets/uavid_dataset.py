@@ -99,6 +99,10 @@ class UavidDatasetWithTransform(Dataset):
         previous_frames = self.all_images[10 * (idx // 9) : index][
             -self.max_previous_frames :
         ]
+
+        # Uncomment to test "best-case" ideal scenario
+        previous_frames = [current_frame]
+
         current_segmentation_map = Path(
             str(current_frame).replace("Images", "ADE20K_Labels")
         )
@@ -156,7 +160,6 @@ class UavidDatasetWithTransform(Dataset):
         example["segmentation_mask"] = self.conditioning_image_transforms(
             current_segmentation_map
         )
-
         return example
 
 

@@ -2,14 +2,26 @@ hydra:
   job:
     chdir: True
   run:
-    dir: outputs/ground_truth_upper_bound/${now:%Y-%m-%d__%H-%M-%S}
+    dir: outputs/ground_truth_upper_bound/mlp/${now:%Y-%m-%d__%H-%M-%S}
 
 _target_: config.TrainerConfig
+
+mapper:
+  _target_: config.MapperConfig
+  in_channels: 768
+  hidden_channels: [64, 768]
+  norm_layer_type: "layernorm"
+  activation_layer_type: "relu"
+  inplace: null
+  bias: True
+  dropout: 0.0
+  train: True
 
 lr:
   _target_: config.LearningRateConfig
   unet: 1e-5
   controlnet: 1e-4
+  mapper: 1e-4
   scale: True
   
 lr_scheduler:
@@ -51,6 +63,7 @@ model:
   lora_rank: 4
   use_ip_adapter: False
   ip_adapter_scale: 0.8
+  use_mapper: True
 
 gradient_accumulation_steps: 1
 num_train_epochs: 350
