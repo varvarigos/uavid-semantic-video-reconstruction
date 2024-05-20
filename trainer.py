@@ -183,21 +183,17 @@ class Trainer:
         for self.epoch in range(first_epoch, self.cfg.num_train_epochs):
             model.train()
 
-            if self.epoch < 10:
-                optimizer.param_groups[0]["lr"] = 0
-                optimizer.param_groups[1]["lr"] = 0
-                lr_scheduler.optimizers[0].param_groups[0]["lr"] = 0
-                lr_scheduler.optimizers[0].param_groups[1]["lr"] = 0
-            else:
-                optimizer.param_groups[0]["lr"] = self.cfg.lr.controlnet
-                optimizer.param_groups[1]["lr"] = self.cfg.lr.unet
-                lr_scheduler.optimizers[0].param_groups[0][
-                    "lr"
-                ] = self.cfg.lr.controlnet
-                lr_scheduler.optimizers[0].param_groups[1][
-                    "lr"
-                ] = self.cfg.lr.unet
-                # optimizer.param_groups[2]["lr"] = 0
+            # if self.epoch < 10:
+            #     lr_scheduler.optimizers[0].param_groups[0]["lr"] = 0
+            #     lr_scheduler.optimizers[0].param_groups[1]["lr"] = 0
+            # else:
+            #     lr_scheduler.optimizers[0].param_groups[0][
+            #         "lr"
+            #     ] = self.cfg.lr.controlnet
+            #     lr_scheduler.optimizers[0].param_groups[1][
+            #         "lr"
+            #     ] = self.cfg.lr.unet
+            #     # lr_scheduler.optimizers[0].param_groups[2]['lr'] = 0
 
             total_loss = 0
             for step, batch in enumerate(train_dataloader):
@@ -250,7 +246,7 @@ class Trainer:
                                 model=model, val_dataloader=val_dataloder
                             )
                             model.train()
-                lrs = lr_scheduler.get_last_lr()
+                lrs = lr_scheduler.get_lr()
                 logs = (
                     {"loss": loss.detach().item()}
                     | (

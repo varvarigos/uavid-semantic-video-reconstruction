@@ -67,6 +67,7 @@ class DatasetConfig:
     resolution: int = 512
     center_crop: bool = True
     max_previous_frames: int | None = None
+    oracle: bool = False
 
     def __post_init__(self):
         self.dataset_path = Path(self.dataset_path)

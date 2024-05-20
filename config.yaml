@@ -9,12 +9,12 @@ _target_: config.TrainerConfig
 mapper:
   _target_: config.MapperConfig
   in_channels: 768
-  hidden_channels: [64, 768]
+  hidden_channels: [768, 768]
   norm_layer_type: "layernorm"
   activation_layer_type: "relu"
   inplace: null
   bias: True
-  dropout: 0.0
+  dropout: 0.2
   train: True
 
 lr:
@@ -23,7 +23,7 @@ lr:
   controlnet: 1e-4
   mapper: 1e-4
   scale: True
-  
+
 lr_scheduler:
   _target_: config.LRSchedulerConfig
   scheduler_type: "constant"
@@ -45,6 +45,7 @@ dataset:
   resolution: 512
   center_crop: True
   max_previous_frames: 1 # null
+  oracle: True
 
 dataloader:
   _target_: config.DataloaderConfig

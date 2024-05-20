@@ -23,10 +23,12 @@ class UavidDatasetWithTransform(Dataset):
         transform=None,
         indices=None,
         max_previous_frames=None,
+        oracle=False,
     ):
         self.UAVID_SHAPE = (3840, 2160)
 
         self.path = path
+        self.oracle = oracle
 
         self.all_images = []
         for dirr in self.path.rglob("*"):
@@ -89,19 +91,20 @@ class UavidDatasetWithTransform(Dataset):
         if self.indices is not None:
             idx = self.indices[idx % len(self.indices)]
 
-        # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
-        # index = 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, ...
-        index = (idx // 9) * 10 + (idx % 9) + 1
-        current_frame = self.all_images[index]
+        if self.oracle:
+            current_frame = self.all_images[idx]
+            previous_frames = [current_frame]
+        else:
+            # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
+            # index = 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, ...
+            index = (idx // 9) * 10 + (idx % 9) + 1
+            current_frame = self.all_images[index]
 
-        # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
-        # 10 * (idx // 9) = 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 10, ...
-        previous_frames = self.all_images[10 * (idx // 9) : index][
-            -self.max_previous_frames :
-        ]
-
-        # Uncomment to test "best-case" ideal scenario
-        previous_frames = [current_frame]
+            # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
+            # 10 * (idx // 9) = 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 10, ...
+            previous_frames = self.all_images[10 * (idx // 9) : index][
+                -self.max_previous_frames :
+            ]
 
         current_segmentation_map = Path(
             str(current_frame).replace("Images", "ADE20K_Labels")
