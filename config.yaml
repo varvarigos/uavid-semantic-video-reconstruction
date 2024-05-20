@@ -6,6 +6,11 @@ hydra:
 
 _target_: config.TrainerConfig
 
+eval_script:
+    _target_: config.EvalConfig
+    images_dir: "/teamspace/studios/this_studio/outputs/ground_truth_upper_bound/mlp/2024-05-20__19-06-20/predictions/epoch_0_step_0.png"
+    evaluate: True
+
 mapper:
   _target_: config.MapperConfig
   in_channels: 768
@@ -64,7 +69,7 @@ model:
   lora_rank: 4
   use_ip_adapter: False
   ip_adapter_scale: 0.8
-  use_mapper: True
+  use_mapper: False
 
 gradient_accumulation_steps: 1
 num_train_epochs: 350

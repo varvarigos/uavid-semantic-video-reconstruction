@@ -39,3 +39,44 @@ def image_grid(imgs, rows, cols):
         grid.paste(img, box=(i % cols * w, i // cols * h))
 
     return grid
+
+
+def extract_images_from_grid(
+    image_path, img_width=512, img_height=512, num_columns=2
+):
+    """
+    Extracts images from the first two columns of a composite image.
+
+    Args:
+    image_path (str): Path to the composite image.
+    img_width (int): Width of each sub-image.
+    img_height (int): Height of each sub-image.
+    num_columns (int): Number of columns to process (default is 2).
+
+    Returns:
+    list: A list containing two lists of PIL Image objects, each corresponding to one of the first two columns.
+    """
+    # Open the full image
+    full_image = Image.open(image_path)
+
+    # Initialize lists to store images from each column
+    column_images = [[] for _ in range(num_columns)]
+
+    # Calculate the number of rows by dividing the full image height by the height of each small image
+    num_rows = full_image.height // img_height
+
+    # Crop and store images from the specified columns
+    for col in range(num_columns):
+        for row in range(num_rows):
+            left = col * img_width
+            upper = row * img_height
+            right = left + img_width
+            lower = upper + img_height
+
+            # Crop the image
+            cropped_img = full_image.crop((left, upper, right, lower))
+
+            # Store the cropped image in the corresponding list
+            column_images[col].append(cropped_img)
+
+    return column_images

@@ -10,6 +10,12 @@ from torch.utils.data import DataLoader
 
 
 @dataclass
+class EvalConfig:
+    images_dir: str = "predictions"
+    evaluate: bool = False
+
+
+@dataclass
 class MapperConfig:
     norm_layer: torch.nn.Module = field(init=False)
     activation_layer: torch.nn.Module = field(init=False)
@@ -119,6 +125,7 @@ class TrainerConfig:
     allow_tf32: bool = False
     logger: str = "tensorboard"
 
+    eval_script: EvalConfig = field(default_factory=EvalConfig)
     mapper: MapperConfig = field(default_factory=MapperConfig)
     lr: LearningRateConfig = field(default_factory=LearningRateConfig)
     lr_scheduler: LRSchedulerConfig = field(default_factory=LRSchedulerConfig)
