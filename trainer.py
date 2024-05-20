@@ -196,74 +196,82 @@ class Trainer:
             #     # lr_scheduler.optimizers[0].param_groups[2]['lr'] = 0
 
             total_loss = 0
-            with self.accelerator.accumulate(model):
-                # TODO: we should not need this loop
-                for k, v in batch.items():
-                    if k == "pixel_values_clip":
-                        # v is a list of tensors
-                        batch[k] = [vi.to(device=self.cfg.device) for vi in v]
-                        if torch.is_floating_point(
-                            v[0]
-                        ) and self.cfg.device != torch.device("cpu"):
+            for step, batch in enumerate(train_dataloader):
+                with self.accelerator.accumulate(model):
+                    # TODO: we should not need this loop
+                    for k, v in batch.items():
+                        if k == "pixel_values_clip":
+                            # v is a list of tensors
                             batch[k] = [
-                                vi.to(dtype=self.cfg.dtype) for vi in batch[k]
+                                vi.to(device=self.cfg.device) for vi in v
                             ]
-                    else:
-                        batch[k] = v.to(device=self.cfg.device)
-                        if torch.is_floating_point(
-                            v
-                        ) and self.cfg.device != torch.device("cpu"):
-                            batch[k] = batch[k].to(dtype=self.cfg.dtype)
+                            if torch.is_floating_point(
+                                v[0]
+                            ) and self.cfg.device != torch.device("cpu"):
+                                batch[k] = [
+                                    vi.to(dtype=self.cfg.dtype)
+                                    for vi in batch[k]
+                                ]
+                        else:
+                            batch[k] = v.to(device=self.cfg.device)
+                            if torch.is_floating_point(
+                                v
+                            ) and self.cfg.device != torch.device("cpu"):
+                                batch[k] = batch[k].to(dtype=self.cfg.dtype)
 
-                loss = model.training_step(batch, step)
-                total_loss += loss
+                    loss = model.training_step(batch, step)
+                    total_loss += loss
 
-                self.accelerator.backward(loss)
-                if self.accelerator.sync_gradients:
-                    self.accelerator.clip_grad_norm_(
-                        model.trainable_parameters, self.cfg.max_grad_norm
-                    )
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
-
-            # Checks if the accelerator has performed an optimization step behind the scenes
-            if self.accelerator.sync_gradients:
-                progress_bar.update(1)
-                self.global_step += 1
-
-                if self.accelerator.is_main_process:
-                    if self.global_step % self.cfg.checkpointing_steps == 0:
-                        self.accelerator.save_state()
-                        self.logger.info("Saved state")
-
-                    if self.global_step % self.cfg.prediction_steps == 0:
-                        self.validation(
-                            model=model, val_dataloader=val_dataloder
+                    self.accelerator.backward(loss)
+                    if self.accelerator.sync_gradients:
+                        self.accelerator.clip_grad_norm_(
+                            model.trainable_parameters, self.cfg.max_grad_norm
                         )
-                        model.train()
-            lrs = lr_scheduler.get_lr()
-            logs = (
-                {"loss": loss.detach().item()}
-                | ({"lr_unet": lrs.pop(0)} if self.cfg.model.train_unet else {})
-                | (
-                    {"lr_cntrl": lrs.pop(0)}
-                    if self.cfg.model.train_control_net
-                    else {}
-                )
-                | (
-                    {"lr_mapper": lrs.pop(0)}
-                    if self.cfg.mapper.train and self.cfg.model.use_mapper
-                    else {}
-                )
-            )
-            progress_bar.set_postfix(**logs)
-            self.accelerator.log(logs, step=self.global_step)
+                    optimizer.step()
+                    lr_scheduler.step()
+                    optimizer.zero_grad()
 
-            if self.global_step >= self.cfg.max_train_steps:
-                break
+                # Checks if the accelerator has performed an optimization step behind the scenes
+                if self.accelerator.sync_gradients:
+                    progress_bar.update(1)
+                    self.global_step += 1
 
-        print(total_loss / len(train_dataloader.dataset))
+                    if self.accelerator.is_main_process:
+                        if self.global_step % self.cfg.checkpointing_steps == 0:
+                            self.accelerator.save_state()
+                            self.logger.info("Saved state")
+
+                        if self.global_step % self.cfg.prediction_steps == 0:
+                            self.validation(
+                                model=model, val_dataloader=val_dataloder
+                            )
+                            model.train()
+                lrs = lr_scheduler.get_lr()
+                logs = (
+                    {"loss": loss.detach().item()}
+                    | (
+                        {"lr_unet": lrs.pop(0)}
+                        if self.cfg.model.train_unet
+                        else {}
+                    )
+                    | (
+                        {"lr_cntrl": lrs.pop(0)}
+                        if self.cfg.model.train_control_net
+                        else {}
+                    )
+                    | (
+                        {"lr_mapper": lrs.pop(0)}
+                        if self.cfg.mapper.train and self.cfg.model.use_mapper
+                        else {}
+                    )
+                )
+                progress_bar.set_postfix(**logs)
+                self.accelerator.log(logs, step=self.global_step)
+
+                if self.global_step >= self.cfg.max_train_steps:
+                    break
+
+            print(total_loss / len(train_dataloader.dataset))
 
         ## Finish Up Training
 
