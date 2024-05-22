@@ -73,12 +73,16 @@ def main(cfg: TrainerConfig) -> None:
         device=cfg.device,
         dtype=cfg.dtype,
         train_lora_adapter=cfg.model.train_unet,
-        controlnet=ControlNet(
-            model_name="lllyasviel/sd-controlnet-seg",
-            device=cfg.device,
-            dtype=cfg.dtype,
-            train_lora_adapter=cfg.model.train_control_net,
-            lora_rank=cfg.model.lora_rank,
+        controlnet=(
+            ControlNet(
+                model_name="lllyasviel/sd-controlnet-seg",
+                device=cfg.device,
+                dtype=cfg.dtype,
+                train_lora_adapter=cfg.model.train_control_net,
+                lora_rank=cfg.model.lora_rank,
+            )
+            if cfg.model.use_control_net
+            else None
         ),
         mapper=mapper if cfg.model.use_mapper else None,
     )

@@ -4,6 +4,7 @@ import torch
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration
+from diffusers import StableDiffusionPipeline
 from diffusers.pipelines import StableDiffusionControlNetPipeline
 from torch import nn
 from torch.utils.data import DataLoader
@@ -117,12 +118,13 @@ class Trainer:
         self.logger.info(
             f"  Trainable UNet LoRA Parameters: {unet_param_stats['trainable']}/{unet_param_stats['all']}"
         )
-        controlnet_param_stats = get_parameters_stats(
-            model.controlnet.parameters()
-        )
-        self.logger.info(
-            f"  Trainable ControlNet LoRA Parameters: {controlnet_param_stats['trainable']}/{controlnet_param_stats['all']}"
-        )
+        if model.controlnet:
+            controlnet_param_stats = get_parameters_stats(
+                model.controlnet.parameters()
+            )
+            self.logger.info(
+                f"  Trainable ControlNet LoRA Parameters: {controlnet_param_stats['trainable']}/{controlnet_param_stats['all']}"
+            )
         if self.cfg.model.use_mapper:
             mapper_param_stats = get_parameters_stats(model.mapper.parameters())
             self.logger.info(
@@ -184,15 +186,11 @@ class Trainer:
             model.train()
 
             # if self.epoch < 10:
-            #     lr_scheduler.optimizers[0].param_groups[0]["lr"] = 0
-            #     lr_scheduler.optimizers[0].param_groups[1]["lr"] = 0
+            #     optimizer.param_groups[0]["lr"] = 0
+            #     optimizer.param_groups[1]["lr"] = 0
             # else:
-            #     lr_scheduler.optimizers[0].param_groups[0][
-            #         "lr"
-            #     ] = self.cfg.lr.controlnet
-            #     lr_scheduler.optimizers[0].param_groups[1][
-            #         "lr"
-            #     ] = self.cfg.lr.unet
+            #     optimizer.param_groups[0]["lr"] = self.cfg.lr.controlnet
+            #     optimizer.param_groups[1]["lr"] = self.cfg.lr.unet
             #     # lr_scheduler.optimizers[0].param_groups[2]['lr'] = 0
 
             total_loss = 0
@@ -301,7 +299,6 @@ class Trainer:
         generator = torch.manual_seed(42)
 
         if model.controlnet:
-            # maybe those need to be unwrapped first, e.g.: self.accelerator.unwrap_model(model.controlnet)
             pipe = StableDiffusionControlNetPipeline.from_pretrained(
                 "CompVis/stable-diffusion-v1-4",
                 safety_checker=None,
@@ -310,10 +307,18 @@ class Trainer:
                 unet=model.unet,
                 vae=model.vae.to(torch.float32),
             ).to(device=self.cfg.device)
+        else:
+            pipe = StableDiffusionPipeline.from_pretrained(
+                "CompVis/stable-diffusion-v1-4",
+                safety_checker=None,
+                torch_dtype=self.cfg.dtype,
+                unet=model.unet,
+                vae=model.vae.to(torch.float32),
+            ).to(device=self.cfg.device)
 
         if self.cfg.model.use_ip_adapter:
             # pipe.load_ip_adapter(
-            #     "h94/IP-Adapter-plus",
+            #     "h94/IP-Adapter",
             #     subfolder="models",
             #     weight_name="ip-adapter_sd15.bin",
             # )

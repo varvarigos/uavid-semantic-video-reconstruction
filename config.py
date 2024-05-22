@@ -94,6 +94,7 @@ class ModelConfig:
     image_encoder_revision: str = "v2.0"
     train_unet: bool = True
     train_control_net: bool = True
+    use_control_net: bool = True
     lora_rank: int = 4
     use_ip_adapter: bool = False
     ip_adapter_scale: float | None = None
