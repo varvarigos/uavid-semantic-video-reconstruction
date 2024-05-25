@@ -334,7 +334,6 @@ class Trainer:
         images = []
         gt_images = []
         seg_maps = []
-
         for batch in tqdm(val_dataloader):
             with torch.no_grad():
                 # with accelerator.autocast():

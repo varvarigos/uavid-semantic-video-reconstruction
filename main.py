@@ -34,9 +34,9 @@ def main(cfg: TrainerConfig) -> None:
     # Dataset
     transform = A.ReplayCompose(
         [
-            A.Rotate(limit=180, crop_border=True),
+            A.Rotate(limit=90, crop_border=True),
             A.HorizontalFlip(),
-            A.RandomResizedCrop(3840, 2160),
+            A.RandomResizedCrop((2160, 3840), scale=(0.6, 1.0)),
         ],
         additional_targets={"prev_frame": "image", "seg_map": "mask"},
     )
@@ -146,7 +146,7 @@ def main(cfg: TrainerConfig) -> None:
         path=cfg.dataset.dataset_path / "uavid_val",
         size=cfg.dataset.resolution,
         center_crop=cfg.dataset.center_crop,
-        indices=[0, 5, 10, 15],  # , 20, 25, 30, 35, 40, 45, 50, 55, 60],
+        indices=[0, 5, 10, 15],  # 20, 25, 30, 35, 40, 45, 50, 55, 60],
         max_previous_frames=cfg.dataset.max_previous_frames,
         oracle=cfg.dataset.oracle,
     )

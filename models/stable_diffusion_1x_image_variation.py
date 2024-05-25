@@ -39,7 +39,7 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
                 if image_encoder_revision is None
                 else image_encoder_revision
             ),
-            subfolder="image_encoder",
+            subfolder="" if "clip" in image_encoder_name else "image_encoder",
         )
 
         self.image_encoder.requires_grad_(False)

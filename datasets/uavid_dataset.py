@@ -52,8 +52,12 @@ class UavidDatasetWithTransform(Dataset):
 
         self.vae_transforms = T.Compose(
             [
-                T.Resize(size, interpolation=T.InterpolationMode.BILINEAR),
-                (T.CenterCrop(size) if center_crop else T.RandomCrop(size)),
+                T.Resize(
+                    (size, size), interpolation=T.InterpolationMode.BILINEAR
+                ),
+                T.CenterCrop(
+                    size
+                ),  # (T.CenterCrop(size) if center_crop else T.RandomCrop(size)),
                 T.ToTensor(),
                 T.Normalize([0.5], [0.5]),
             ]
@@ -61,12 +65,14 @@ class UavidDatasetWithTransform(Dataset):
 
         self.input_img_encdr_trnsfrms = T.Compose(
             [
-                T.ToTensor(),
                 T.Resize(
                     (224, 224),
                     interpolation=T.InterpolationMode.BICUBIC,
-                    antialias=False,
+                    # antialias=False,
                 ),
+                T.CenterCrop(224),
+                lambda image: image.convert("RGB"),
+                T.ToTensor(),
                 T.Normalize(
                     [0.48145466, 0.4578275, 0.40821073],
                     [0.26862954, 0.26130258, 0.27577711],
@@ -76,7 +82,9 @@ class UavidDatasetWithTransform(Dataset):
 
         self.conditioning_image_transforms = T.Compose(
             [
-                T.Resize(size, interpolation=T.InterpolationMode.BILINEAR),
+                T.Resize(
+                    (size, size), interpolation=T.InterpolationMode.BILINEAR
+                ),
                 T.CenterCrop(size),
                 T.ToTensor(),
             ]

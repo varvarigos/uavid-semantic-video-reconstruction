@@ -21,7 +21,9 @@ def main(cfg: EvalConfig) -> None:
 
     images_dir = cfg.eval_script.images_dir
 
-    all_images = extract_images_from_grid(images_dir)
+    all_images = extract_images_from_grid(
+        images_dir,  # img_height=256, img_width=256
+    )
     pred_imgs = all_images[0]
     gt_imgs = all_images[1]
 
