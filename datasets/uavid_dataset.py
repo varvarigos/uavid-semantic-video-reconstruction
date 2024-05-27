@@ -112,10 +112,8 @@ class UavidDatasetWithTransform(Dataset):
         )
 
     def __getitem__(self, idx):
-        print("orig idx", idx)
         if self.indices is not None:
             idx = self.indices[idx % len(self.indices)]
-        print("idx", idx)
 
         imgs_per_sequence = 10
         usable_imgs_per_sequence = imgs_per_sequence - self.prediction_steps
@@ -133,7 +131,6 @@ class UavidDatasetWithTransform(Dataset):
                 + self.shift_indices
             )
             current_frame = self.all_images[index]
-            print("index", index)
 
             # for usable_imgs_per_sequence = 9
             # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
@@ -141,11 +138,6 @@ class UavidDatasetWithTransform(Dataset):
             previous_frames = self.all_images[
                 10 * (idx // usable_imgs_per_sequence) : index
             ][-self.max_previous_frames :]
-            print(
-                "previous_frames idxs",
-                10 * (idx // usable_imgs_per_sequence),
-                index,
-            )
 
         current_segmentation_map = Path(
             str(current_frame).replace("Images", "ADE20K_Labels")
@@ -288,14 +280,11 @@ class PredictionsUavidDataset(Dataset):
         )
 
     def __getitem__(self, idx):
-        print("orig_idx", idx)
         orig_idx = idx
         predicitons_len = len(self.predicted_imgs[orig_idx])
-        print("predicitons_len", predicitons_len)
 
         if self.indices is not None:
             idx = self.indices[idx % len(self.indices)]
-        print("idx", idx)
 
         imgs_per_sequence = 10
         usable_imgs_per_sequence = imgs_per_sequence - self.prediction_steps
@@ -308,10 +297,8 @@ class PredictionsUavidDataset(Dataset):
             + (idx % usable_imgs_per_sequence)
             + 1
         )
-        print("index", index)
 
         current_frame = self.all_images[index + predicitons_len]
-        print("current_frame idx", index + predicitons_len)
 
         # for usable_imgs_per_sequence = 9
         # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
@@ -319,11 +306,6 @@ class PredictionsUavidDataset(Dataset):
         previous_frames = self.all_images[
             10 * (idx // usable_imgs_per_sequence) : index
         ][-self.max_previous_frames :]
-        print(
-            "previous_frames idxs",
-            10 * (idx // usable_imgs_per_sequence),
-            index,
-        )
 
         current_segmentation_map = Path(
             str(current_frame).replace("Images", "ADE20K_Labels")
