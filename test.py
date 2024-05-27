@@ -1,29 +1,38 @@
 import hydra
 import torch
-
-# from hydra.core.config_store import ConfigStore
 from hydra.utils import instantiate
+from tqdm import trange
 
-from config import (  # DataloaderConfig,; DatasetConfig,; LearningRateConfig,; LRSchedulerConfig,; ModelConfig,; OptimizerConfig,
-    TrainerConfig,
+from config import TrainerConfig
+from datasets import (
+    PredictionsUavidDataset,
+    UavidDatasetWithTransform,
+    uavid_collate_fn,
 )
-from datasets import UavidDatasetWithTransform, uavid_collate_fn
-from models import ControlNet, StableDiffusion1xImageVariation
+from models import ControlNet, Mapper, StableDiffusion1xImageVariation
 from trainer import Trainer
 
-# cs = ConfigStore.instance()
-# cs.store(name="base_trainer", node=TrainerConfig)xw
-# cs.store(name="base_model", node=ModelConfig)
-# cs.store(name="base_learning_rate", node=LearningRateConfig)
-# cs.store(name="base_lr_scheduler", node=LRSchedulerConfig)
-# cs.store(name="base_optimizer", node=OptimizerConfig)
-# cs.store(name="base_dataset", node=DatasetConfig)
-# cs.store(name="base_dataloader", node=DataloaderConfig)
+FUTURE_STEPS = 2  # 1 - 9
 
 
-@hydra.main(version_base=None, config_path=".", config_name="config")
+@hydra.main(version_base=None, config_path="conf", config_name="test_config")
 def main(cfg: TrainerConfig) -> None:
     cfg = instantiate(cfg)
+
+    # Model creation
+    if cfg.model.use_mapper:
+        mapper = Mapper(
+            in_channels=cfg.mapper.in_channels,  # Number of input features
+            hidden_channels=cfg.mapper.hidden_channels,  # List specifying the size of each hidden layer
+            norm_layer=cfg.mapper.norm_layer,  # No normalization layer
+            activation_layer=cfg.mapper.activation_layer,  # Using ReLU as the activation function
+            inplace=cfg.mapper.inplace,  # In-place operation for activation
+            bias=cfg.mapper.bias,  # Using bias in linear layers
+            dropout=cfg.mapper.dropout,  # No dropout
+            device=cfg.device,
+            dtype=cfg.dtype,
+            train_mapper=cfg.mapper.train,
+        )
 
     # Model creation
     model = StableDiffusion1xImageVariation(
@@ -34,13 +43,18 @@ def main(cfg: TrainerConfig) -> None:
         device=cfg.device,
         dtype=cfg.dtype,
         train_lora_adapter=cfg.model.train_unet,
-        controlnet=ControlNet(
-            model_name="lllyasviel/sd-controlnet-seg",
-            device=cfg.device,
-            dtype=cfg.dtype,
-            train_lora_adapter=cfg.model.train_control_net,
-            lora_rank=cfg.model.lora_rank,
+        controlnet=(
+            ControlNet(
+                model_name="lllyasviel/sd-controlnet-seg",
+                device=cfg.device,
+                dtype=cfg.dtype,
+                train_lora_adapter=cfg.model.train_control_net,
+                lora_rank=cfg.model.lora_rank,
+            )
+            if cfg.model.use_control_net
+            else None
         ),
+        mapper=mapper if cfg.model.use_mapper else None,
     )
 
     # Enable TF32 for faster training on Ampere GPUs,
@@ -53,9 +67,11 @@ def main(cfg: TrainerConfig) -> None:
         path=cfg.dataset.dataset_path / "uavid_val",
         size=cfg.dataset.resolution,
         center_crop=cfg.dataset.center_crop,
-        indices=[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60],
+        indices=[0, 5, 10, 15],  # , 20, 25, 30, 35, 40, 45, 50, 55, 60],
         max_previous_frames=cfg.dataset.max_previous_frames,
         oracle=cfg.dataset.oracle,
+        prediction_steps=FUTURE_STEPS,
+        shift_indices=0,
     )
 
     val_dataloader = torch.utils.data.DataLoader(
@@ -71,39 +87,96 @@ def main(cfg: TrainerConfig) -> None:
     trainer = Trainer(cfg)
 
     # Prepare everything with our `accelerator`.
-    if cfg.model.train_control_net and not cfg.model.train_unet:
-        (
-            model.controlnet.controlnet,
+    to_prepare = (
+        ([model.mapper] if cfg.mapper.train else [])
+        + ([model.controlnet] if cfg.model.train_control_net else [])
+        + ([model.unet] if cfg.model.train_unet else [])
+        + [
             val_dataloader,
-        ) = trainer.accelerator.prepare(
-            model.controlnet.controlnet,
-            val_dataloader,
-        )
-    elif cfg.model.train_unet and not cfg.model.train_control_net:
-        model.unet, val_dataloader = trainer.accelerator.prepare(
-            model.unet, val_dataloader
-        )
-    else:
-        (
-            model.unet,
-            model.controlnet.controlnet,
-            val_dataloader,
-        ) = trainer.accelerator.prepare(
-            model.unet,
-            model.controlnet.controlnet,
-            val_dataloader,
-        )
+        ]
+    )
+    prepared = list(trainer.accelerator.prepare(*to_prepare))
+    if cfg.mapper.train:
+        model.mapper = prepared.pop(0)
+    if cfg.model.train_control_net:
+        model.controlnet = prepared.pop(0)
+    if cfg.model.train_unet:
+        model.unet = prepared.pop(0)
+    val_dataloader = prepared.pop(0)
+
+    # # Prepare everything with our `accelerator`.
+    # if cfg.model.train_control_net and not cfg.model.train_unet:
+    #     (
+    #         model.controlnet.controlnet,
+    #         val_dataloader,
+    #     ) = trainer.accelerator.prepare(
+    #         model.controlnet.controlnet,
+    #         val_dataloader,
+    #     )
+    # elif cfg.model.train_unet and not cfg.model.train_control_net:
+    #     model.unet, val_dataloader = trainer.accelerator.prepare(
+    #         model.unet, val_dataloader
+    #     )
+    # else:
+    #     (
+    #         model.unet,
+    #         model.controlnet.controlnet,
+    #         val_dataloader,
+    #     ) = trainer.accelerator.prepare(
+    #         model.unet,
+    #         model.controlnet.controlnet,
+    #         val_dataloader,
+    #     )
 
     trainer.cfg.post_prepare_init(val_dataloader)
 
     model.unet.requires_grad_(False)
-    model.controlnet.requires_grad_(False)
+    if cfg.model.use_mapper:
+        model.mapper.requires_grad_(False)
+    if cfg.model.use_control_net:
+        model.controlnet.requires_grad_(False)
+
     model.eval()
     trainer.accelerator.load_state(
-        "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/2024-05-24__18-44-10/checkpoints/checkpoint_13"
+        cfg.use_checkpoint
+        # "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/2024-05-24__18-44-10/checkpoints/checkpoint_13"
         # "/teamspace/studios/this_studio/outputs/2024-05-14__18-04-13/single_frame_exp_2_350epochs/checkpoints/checkpoint_9"
     )
-    trainer.validation(model, val_dataloader)
+    predictions = []
+    predictions.append(
+        trainer.validation(
+            model,
+            val_dataloader,
+            output_name=(
+                "step_0"
+                if val_dataset.shift_indices == 0
+                else f"step_{val_dataset.shift_indices}_g"
+            ),
+        )
+    )
+    cur_dataset = val_dataset
+
+    if val_dataset.shift_indices != 0:
+        return
+
+    for step in trange(1, FUTURE_STEPS):
+        # update dataloader to get the predictions for the next step
+        cur_dataset = PredictionsUavidDataset(
+            orig_dataset=cur_dataset,
+            predictions=predictions,
+        )
+        val_dataloader = torch.utils.data.DataLoader(
+            cur_dataset,
+            batch_size=cfg.dataloader.val_batch_size,
+            shuffle=False,
+            num_workers=cfg.dataloader.num_workers,
+            collate_fn=uavid_collate_fn,
+        )
+        predictions.append(
+            trainer.validation(
+                model, val_dataloader, output_name=f"step_{step}"
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ from trainer import Trainer
 # cs.store(name="base_dataloader", node=DataloaderConfig)
 
 
-@hydra.main(version_base=None, config_path=".", config_name="config")
+@hydra.main(version_base=None, config_path="conf", config_name="train_config")
 def main(cfg: TrainerConfig) -> None:
     cfg = instantiate(cfg)
 

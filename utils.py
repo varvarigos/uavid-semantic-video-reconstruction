@@ -48,7 +48,7 @@ def extract_images_from_grid(
     Extracts images from the first two columns of a composite image.
 
     Args:
-    image_path (str): Path to the composite image.
+    image_path (Path): Path to the composite image.
     img_width (int): Width of each sub-image.
     img_height (int): Height of each sub-image.
     num_columns (int): Number of columns to process (default is 2).

@@ -9,20 +9,19 @@ from torchvision import transforms
 from config import EvalConfig
 from utils import extract_images_from_grid
 
-ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device="cuda")
-psnr = PeakSignalNoiseRatio().to(device="cuda")
-# fid = FrechetInceptionDistance(feature=64).to(device='cuda')
-
 
 # take the config from the config.yaml file and not from the python file
-@hydra.main(config_path=".", config_name="config")
+@hydra.main(config_path="conf", config_name="train_config")
 def main(cfg: EvalConfig) -> None:
     cfg = instantiate(cfg)
 
-    images_dir = cfg.eval_script.images_dir
+    ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(device="cuda")
+    psnr = PeakSignalNoiseRatio().to(device="cuda")
+
+    images_path = cfg.eval_script.images_path
 
     all_images = extract_images_from_grid(
-        images_dir,  # img_height=256, img_width=256
+        images_path,  # img_height=256, img_width=256
     )
     pred_imgs = all_images[0]
     gt_imgs = all_images[1]
@@ -46,6 +45,10 @@ def main(cfg: EvalConfig) -> None:
 
     print(f"SSIM: {ssim_avg}")
     print(f"PSNR: {psnr_avg}")
+
+    with open(images_path.with_suffix(".txt"), "w", encoding="utf-8") as f:
+        f.write(f"SSIM: {ssim_avg}\n")
+        f.write(f"PSNR: {psnr_avg}\n")
 
 
 if __name__ == "__main__":

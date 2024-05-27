@@ -1,1 +1,5 @@
-from .uavid_dataset import UavidDatasetWithTransform, uavid_collate_fn
+from .uavid_dataset import (
+    PredictionsUavidDataset,
+    UavidDatasetWithTransform,
+    uavid_collate_fn,
+)

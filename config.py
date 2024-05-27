@@ -11,8 +11,11 @@ from torch.utils.data import DataLoader
 
 @dataclass
 class EvalConfig:
-    images_dir: str = "predictions"
+    images_path: Path = Path("predictions.png")
     evaluate: bool = False
+
+    def __post_init__(self):
+        self.images_path = Path(self.images_path)
 
 
 @dataclass
@@ -109,7 +112,7 @@ class TrainerConfig:
     gradient_accumulation_steps: int = 1
     num_train_epochs: int = 60
     max_train_steps: int | None = None
-    resume_from_checkpoint: Path | None = None
+    use_checkpoint: Path | None = None
     checkpointing_steps: int = 500
     checkpoints_total_limit: int | None = None
     prediction_steps: int = 50
@@ -144,9 +147,9 @@ class TrainerConfig:
         self.device = torch.device(self.device)
         self.dtype = torch.float16 if self.dtype == "fp16" else torch.float32
 
-        self.resume_from_checkpoint = (
-            Path(self.resume_from_checkpoint)
-            if self.resume_from_checkpoint is not None
+        self.use_checkpoint = (
+            Path(self.use_checkpoint)
+            if self.use_checkpoint is not None
             else None
         )
 

@@ -57,41 +57,41 @@ class Trainer:
     ):
 
         # Prepare everything with our `accelerator`.
-        # to_prepare = (
-        #     ([model.mapper] if self.cfg.mapper.train else [])
-        #     + ([model.controlnet] if self.cfg.model.train_control_net else [])
-        #     + ([model.unet] if self.cfg.model.train_unet else [])
-        #     + [
-        #         optimizer,
-        #         train_dataloader,
-        #         lr_scheduler,
-        #     ]
-        # )
-        # prepared = list(self.accelerator.prepare(*to_prepare))
-        # if self.cfg.mapper.train:
-        #     model.mapper = prepared.pop(0)
-        # if self.cfg.model.train_control_net:
-        #     model.controlnet = prepared.pop(0)
-        # if self.cfg.model.train_unet:
-        #     model.unet = prepared.pop(0)
-        # optimizer = prepared.pop(0)
-        # train_dataloader = prepared.pop(0)
-        # lr_scheduler = prepared.pop(0)
-        (
-            model.mapper,
-            model.controlnet,
-            model.unet,
-            optimizer,
-            train_dataloader,
-            lr_scheduler,
-        ) = self.accelerator.prepare(
-            model.mapper,
-            model.controlnet,
-            model.unet,
-            optimizer,
-            train_dataloader,
-            lr_scheduler,
+        to_prepare = (
+            ([model.mapper] if self.cfg.mapper.train else [])
+            + ([model.controlnet] if self.cfg.model.train_control_net else [])
+            + ([model.unet] if self.cfg.model.train_unet else [])
+            + [
+                optimizer,
+                train_dataloader,
+                lr_scheduler,
+            ]
         )
+        prepared = list(self.accelerator.prepare(*to_prepare))
+        if self.cfg.mapper.train:
+            model.mapper = prepared.pop(0)
+        if self.cfg.model.train_control_net:
+            model.controlnet = prepared.pop(0)
+        if self.cfg.model.train_unet:
+            model.unet = prepared.pop(0)
+        optimizer = prepared.pop(0)
+        train_dataloader = prepared.pop(0)
+        lr_scheduler = prepared.pop(0)
+        # (
+        #     model.mapper,
+        #     model.controlnet,
+        #     model.unet,
+        #     optimizer,
+        #     train_dataloader,
+        #     lr_scheduler,
+        # ) = self.accelerator.prepare(
+        #     model.mapper,
+        #     model.controlnet,
+        #     model.unet,
+        #     optimizer,
+        #     train_dataloader,
+        #     lr_scheduler,
+        # )
 
         self.cfg.post_prepare_init(train_dataloader)
 
@@ -136,11 +136,11 @@ class Trainer:
 
         # Potentially load in the weights and states from a previous save
         # TODO: for sure this needs debugging to work
-        # if self.cfg.resume_from_checkpoint:
-        #     if self.cfg.resume_from_checkpoint != "latest":
-        #         # path = os.path.basename(resume_from_checkpoint)
+        # if self.cfg.use_checkpoint:
+        #     if self.cfg.use_checkpoint != "latest":
+        #         # path = os.path.basename(use_checkpoint)
         #         # do the same for Path type paths
-        #         path = self.cfg.resume_from_checkpoint.name
+        #         path = self.cfg.use_checkpoint.name
         #     else:
         #         # Get the mos recent checkpoint
         #         # dirs = os.listdir(output_dir)
@@ -153,9 +153,9 @@ class Trainer:
 
         #     if path is None:
         #         accelerator.print(
-        #             f"Checkpoint '{self.cfg.resume_from_checkpoint}' does not exist. Starting a new training run."
+        #             f"Checkpoint '{self.cfg.use_checkpoint}' does not exist. Starting a new training run."
         #         )
-        #         self.cfg.resume_from_checkpoint = None
+        #         self.cfg.use_checkpoint = None
         #         initial_global_step = 0
         #     else:
         #         accelerator.print(f"Resuming from checkpoint {path}")
@@ -294,7 +294,12 @@ class Trainer:
 
         self.accelerator.end_training()
 
-    def validation(self, model: nn.Module, val_dataloader: DataLoader):
+    def validation(
+        self,
+        model: nn.Module,
+        val_dataloader: DataLoader,
+        output_name: str | None = None,
+    ):
         model.eval()
         generator = torch.manual_seed(42)
 
@@ -419,7 +424,14 @@ class Trainer:
         )  # .resize((3 * 256, len(images) * 256))
         grid.save(
             self.cfg.predictions_dir
-            / f"epoch_{self.epoch}_step_{self.global_step}.png"
+            / (
+                (
+                    f"epoch_{self.epoch}_step_{self.global_step}"
+                    if output_name is None
+                    else output_name
+                )
+                + ".png"
+            )
         )
 
         if self.cfg.model.use_ip_adapter:

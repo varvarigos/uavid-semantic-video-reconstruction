@@ -2,13 +2,13 @@ hydra:
   job:
     chdir: True
   run:
-    dir: outputs/fixed/ground_truth_upper_bound/${now:%Y-%m-%d__%H-%M-%S}
+    dir: outputs/fixed/validation/ground_truth/${now:%Y-%m-%d__%H-%M-%S}
 
 _target_: config.TrainerConfig
 
 eval_script:
     _target_: config.EvalConfig
-    images_dir: "/teamspace/studios/this_studio/outputs/2024-05-14__22-50-48/single_frame_exp_2_350epochs/predictions/epoch_0_step_0.png"
+    images_path: "/teamspace/studios/this_studio/outputs/fixed/validation/ground_truth/2024-05-27__12-59-48/predictions/epoch_0_step_0.png"
     evaluate: True
 
 mapper:
@@ -24,9 +24,9 @@ mapper:
 
 lr:
   _target_: config.LearningRateConfig
-  unet: 1e-5
-  controlnet: 1e-4
-  mapper: 1e-4
+  unet: 1e-4
+  controlnet: 2e-4
+  mapper: 2e-4
   scale: True
 
 lr_scheduler:
@@ -50,7 +50,7 @@ dataset:
   resolution: 512
   center_crop: True
   max_previous_frames: 1 # null
-  oracle: True
+  oracle: False
 
 dataloader:
   _target_: config.DataloaderConfig
@@ -60,7 +60,7 @@ dataloader:
 
 model:
   _target_: config.ModelConfig
-  model_name: "lambdalabs/sd-image-variations-diffusers" # "lambdalabs/sd-image-variations-diffusers"
+  model_name: "lambdalabs/sd-image-variations-diffusers" # "runwayml/stable-diffusion-v1-5"
   model_revision: "v2.0"
   image_encoder_name: "lambdalabs/sd-image-variations-diffusers" # "openai/clip-vit-large-patch14"
   image_encoder_revision: "v2.0"
@@ -75,7 +75,7 @@ model:
 gradient_accumulation_steps: 1
 num_train_epochs: 350
 max_train_steps: null
-resume_from_checkpoint: null # "/teamspace/studios/this_studio/outputs/ground_truth_upper_bound/mlp/mapper_only2024-05-20__23-33-59/checkpoints/checkpoint_2"
+use_checkpoint: null # "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/2024-05-25__01-08-07/checkpoints/checkpoint_0"
 checkpointing_steps: 750
 checkpoints_total_limit: null
 prediction_steps: 100

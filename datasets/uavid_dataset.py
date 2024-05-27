@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 
 import albumentations as A
@@ -24,11 +25,24 @@ class UavidDatasetWithTransform(Dataset):
         indices=None,
         max_previous_frames=None,
         oracle=False,
+        prediction_steps=1,
+        shift_indices=0,
     ):
+        assert not (
+            oracle and shift_indices != 0
+        ), "Oracle mode is not supported with `shift_indices != 0`"
+
+        if shift_indices != 0:
+            warnings.warn(
+                "`shift_indices` is not equal to 0. Do not use this if you are not sure."
+            )
+
         self.UAVID_SHAPE = (3840, 2160)
 
         self.path = path
         self.oracle = oracle
+        self.prediction_steps = prediction_steps
+        self.shift_indices = shift_indices
 
         self.all_images = []
         for dirr in self.path.rglob("*"):
@@ -93,26 +107,45 @@ class UavidDatasetWithTransform(Dataset):
     def __len__(self):
         if self.indices is not None:
             return len(self.indices)
-        return len(self.all_images) - len(self.all_images) // 10
+        return len(self.all_images) - (
+            (len(self.all_images) // 10) * self.prediction_steps
+        )
 
     def __getitem__(self, idx):
+        print("orig idx", idx)
         if self.indices is not None:
             idx = self.indices[idx % len(self.indices)]
+        print("idx", idx)
 
+        imgs_per_sequence = 10
+        usable_imgs_per_sequence = imgs_per_sequence - self.prediction_steps
         if self.oracle:
             current_frame = self.all_images[idx]
             previous_frames = [current_frame]
         else:
+            # for usable_imgs_per_sequence = 9
             # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
             # index = 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, ...
-            index = (idx // 9) * 10 + (idx % 9) + 1
+            index = (
+                (idx // usable_imgs_per_sequence) * 10
+                + (idx % usable_imgs_per_sequence)
+                + 1
+                + self.shift_indices
+            )
             current_frame = self.all_images[index]
+            print("index", index)
 
+            # for usable_imgs_per_sequence = 9
             # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
             # 10 * (idx // 9) = 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 10, ...
-            previous_frames = self.all_images[10 * (idx // 9) : index][
-                -self.max_previous_frames :
-            ]
+            previous_frames = self.all_images[
+                10 * (idx // usable_imgs_per_sequence) : index
+            ][-self.max_previous_frames :]
+            print(
+                "previous_frames idxs",
+                10 * (idx // usable_imgs_per_sequence),
+                index,
+            )
 
         current_segmentation_map = Path(
             str(current_frame).replace("Images", "ADE20K_Labels")
@@ -196,3 +229,162 @@ def uavid_collate_fn(batch: list[dict]):
     out_dict["pixel_values_clip"] = pixel_values_clip
 
     return out_dict
+
+
+class PredictionsUavidDataset(Dataset):
+    def __init__(
+        self,
+        orig_dataset: Dataset,
+        predictions: list[Image],
+    ):
+        assert len(predictions) > 0
+
+        self.orig_dataset = orig_dataset
+        self.predictions = predictions
+
+        self.prediction_steps = self.orig_dataset.prediction_steps
+        self.UAVID_SHAPE = self.orig_dataset.UAVID_SHAPE
+        self.path = self.orig_dataset.path
+        self.oracle = self.orig_dataset.oracle
+        self.all_images = self.orig_dataset.all_images
+        self.indices = self.orig_dataset.indices
+        self.max_previous_frames = self.orig_dataset.max_previous_frames
+        self.size = self.orig_dataset.size
+        self.center_crop = self.orig_dataset.center_crop
+        self.transform = self.orig_dataset.transform
+        self.vae_transforms = self.orig_dataset.vae_transforms
+        self.input_img_encdr_trnsfrms = (
+            self.orig_dataset.input_img_encdr_trnsfrms
+        )
+        self.conditioning_image_transforms = (
+            self.orig_dataset.conditioning_image_transforms
+        )
+
+        self.predicted_imgs = [
+            []
+            for _ in range(
+                len(self.indices)
+                if self.indices is not None
+                else len(self.all_images)
+                - ((len(self.all_images) // 10) * self.prediction_steps)
+            )
+        ]
+        for prediction in predictions:
+            img_size = prediction.size[0] // 3
+            num_images = prediction.size[1] // img_size
+            # cut each image from the first column of the prediction
+            for i in range(num_images):
+                self.predicted_imgs[i].append(
+                    prediction.crop(
+                        (0, i * img_size, img_size, (i + 1) * img_size)
+                    )
+                )
+
+    def __len__(self):
+        if self.indices is not None:
+            return len(self.indices)
+        return len(self.all_images) - (
+            (len(self.all_images) // 10) * self.prediction_steps
+        )
+
+    def __getitem__(self, idx):
+        print("orig_idx", idx)
+        orig_idx = idx
+        predicitons_len = len(self.predicted_imgs[orig_idx])
+        print("predicitons_len", predicitons_len)
+
+        if self.indices is not None:
+            idx = self.indices[idx % len(self.indices)]
+        print("idx", idx)
+
+        imgs_per_sequence = 10
+        usable_imgs_per_sequence = imgs_per_sequence - self.prediction_steps
+
+        # for usable_imgs_per_sequence = 9
+        # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
+        # index = 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, ...
+        index = (
+            (idx // usable_imgs_per_sequence) * 10
+            + (idx % usable_imgs_per_sequence)
+            + 1
+        )
+        print("index", index)
+
+        current_frame = self.all_images[index + predicitons_len]
+        print("current_frame idx", index + predicitons_len)
+
+        # for usable_imgs_per_sequence = 9
+        # idx = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, ...
+        # 10 * (idx // 9) = 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 10, ...
+        previous_frames = self.all_images[
+            10 * (idx // usable_imgs_per_sequence) : index
+        ][-self.max_previous_frames :]
+        print(
+            "previous_frames idxs",
+            10 * (idx // usable_imgs_per_sequence),
+            index,
+        )
+
+        current_segmentation_map = Path(
+            str(current_frame).replace("Images", "ADE20K_Labels")
+        )
+
+        previous_frames = (
+            [Image.open(previous_frame) for previous_frame in previous_frames]
+            + self.predicted_imgs[orig_idx]
+        )[-self.max_previous_frames :]
+
+        current_frame = Image.open(current_frame)
+        if self.oracle:
+            previous_frames = [current_frame]
+
+        current_segmentation_map = Image.open(current_segmentation_map)
+
+        previous_frames = [
+            exif_transpose(previous_frame) for previous_frame in previous_frames
+        ]
+        current_frame = exif_transpose(current_frame)
+        current_segmentation_map = exif_transpose(current_segmentation_map)
+
+        example = {}
+
+        if not current_frame.mode == "RGB":
+            current_frame = current_frame.convert("RGB")
+        if not previous_frames[0].mode == "RGB":
+            previous_frame = [
+                previous_frame.convert("RGB")
+                for previous_frame in previous_frames
+            ]
+        if not current_segmentation_map.mode == "RGB":
+            current_segmentation_map = current_segmentation_map.convert("RGB")
+
+        if self.transform is not None:
+            transformed = self.transform(
+                image=np.asarray(current_frame),
+                seg_map=np.asarray(current_segmentation_map),
+            )
+
+            used_transform = transformed["replay"]
+            previous_frames = [
+                A.ReplayCompose.replay(
+                    used_transform, image=np.asarray(previous_frame)
+                )
+                for previous_frame in previous_frames
+            ]
+
+            current_frame = Image.fromarray(transformed["image"])
+            previous_frames = [
+                Image.fromarray(previous_frame["image"])
+                for previous_frame in previous_frames
+            ]
+            current_segmentation_map = Image.fromarray(transformed["seg_map"])
+
+        example["pixel_values"] = self.vae_transforms(current_frame)
+        example["pixel_values_clip"] = [
+            self.input_img_encdr_trnsfrms(previous_frame)
+            for previous_frame in previous_frames
+        ]
+        example["segmentation_mask"] = self.conditioning_image_transforms(
+            current_segmentation_map
+        )
+        return example
