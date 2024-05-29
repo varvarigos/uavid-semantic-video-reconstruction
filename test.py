@@ -12,7 +12,7 @@ from datasets import (
 from models import ControlNet, Mapper, StableDiffusion1xImageVariation
 from trainer import Trainer
 
-FUTURE_STEPS = 2  # 1 - 9
+FUTURE_STEPS = 1  # 1 - 9
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="test_config")
@@ -67,7 +67,7 @@ def main(cfg: TrainerConfig) -> None:
         path=cfg.dataset.dataset_path / "uavid_val",
         size=cfg.dataset.resolution,
         center_crop=cfg.dataset.center_crop,
-        indices=[0, 5, 10, 15],  # , 20, 25, 30, 35, 40, 45, 50, 55, 60],
+        indices=[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60],
         max_previous_frames=cfg.dataset.max_previous_frames,
         oracle=cfg.dataset.oracle,
         prediction_steps=FUTURE_STEPS,
@@ -137,11 +137,7 @@ def main(cfg: TrainerConfig) -> None:
         model.controlnet.requires_grad_(False)
 
     model.eval()
-    trainer.accelerator.load_state(
-        cfg.use_checkpoint
-        # "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/2024-05-24__18-44-10/checkpoints/checkpoint_13"
-        # "/teamspace/studios/this_studio/outputs/2024-05-14__18-04-13/single_frame_exp_2_350epochs/checkpoints/checkpoint_9"
-    )
+    trainer.accelerator.load_state(cfg.use_checkpoint)
     predictions = []
     predictions.append(
         trainer.validation(
