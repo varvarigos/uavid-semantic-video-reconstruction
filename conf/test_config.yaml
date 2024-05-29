@@ -2,7 +2,7 @@ hydra:
   job:
     chdir: True
   run:
-    dir: outputs/test/fixed/ground_truth_upper_bound/combined_img_variations
+    dir: outputs/test/fixed/ground_truth_upper_bound/combined_sd_1_5
     # dir: outputs/test/fixed/ground_truth/${now:%Y-%m-%d__%H-%M-%S}
 
 _target_: config.TrainerConfig
@@ -23,7 +23,7 @@ dataset:
   dataset_path: "/teamspace/studios/this_studio/uavid"
   resolution: 512
   center_crop: True
-  max_previous_frames: 1 # null
+  max_previous_frames: null # 1
   oracle: False
 
 dataloader:
@@ -39,11 +39,11 @@ model:
   image_encoder_revision: "v2.0"
   use_control_net: True
   lora_rank: 4
-  use_ip_adapter: True
-  ip_adapter_scale: 0.7
+  use_ip_adapter: False
+  ip_adapter_scale: 0.8
   use_mapper: False
 
-use_checkpoint: "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/combined_img_variations/checkpoints/checkpoint_13"
+use_checkpoint: "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/combined_sd_1_5/checkpoints/checkpoint_0"
 
 output_dir: "."
 local_rank: -1
