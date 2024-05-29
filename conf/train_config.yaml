@@ -8,7 +8,7 @@ _target_: config.TrainerConfig
 
 eval_script:
     _target_: config.EvalConfig
-    images_path: "/teamspace/studios/this_studio/outputs/fixed/validation/ground_truth/2024-05-27__12-59-48/predictions/epoch_0_step_0.png"
+    images_path: "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/combined_sd_1_5/predictions/epoch_27_step_800.png"
     evaluate: True
 
 mapper:
