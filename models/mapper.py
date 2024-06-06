@@ -6,8 +6,6 @@ from torchvision.ops import MLP
 
 
 class Mapper(torch.nn.Module):
-    """ControlNet model with optional LoRA adapter."""
-
     def __init__(
         self,
         in_channels: int,
@@ -40,7 +38,6 @@ class Mapper(torch.nn.Module):
         self.trainable_parameters = []
         if train_mapper:
             if dtype == torch.float16:
-                # only upcast trainable parameters (LoRA) into fp32
                 cast_training_params(self.mapper, dtype=torch.float32)
 
             self.trainable_parameters = [

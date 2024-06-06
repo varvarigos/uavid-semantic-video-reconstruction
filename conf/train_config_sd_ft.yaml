@@ -2,7 +2,7 @@ hydra:
   job:
     chdir: True
   run:
-    dir: outputs/fixed/ground_truth_upper_bound/${now:%Y-%m-%d__%H-%M-%S}
+    dir: outputs_sdft/${now:%Y-%m-%d__%H-%M-%S}
 
 _target_: config.TrainerConfig
 
@@ -11,35 +11,9 @@ eval_script:
     images_path: "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/combined_sd_1_5/predictions/epoch_27_step_800.png"
     evaluate: True
 
-mapper:
-  _target_: config.MapperConfig
-  in_channels: 768
-  hidden_channels: [256, 768]
-  norm_layer_type: "layernorm"
-  activation_layer_type: "relu"
-  inplace: null
-  bias: True
-  dropout: 0.2
-  train: False
-
-lstm:
-  _target_: config.LSTMConfig
-  input_size: 768
-  hidden_size: 768
-  num_layers: 1
-  bias: True
-  batch_first: False
-  dropout: 0.2
-  bidirectional: False
-  proj_size: 0
-  train: False
-
 lr:
   _target_: config.LearningRateConfig
-  unet: 1e-4
-  controlnet: 2e-4
-  mapper: 2e-4
-  lstm: 4e-3
+  unet: 5e-5
   scale: True
 
 lr_scheduler:
@@ -63,11 +37,11 @@ dataset:
   resolution: 512
   center_crop: True
   max_previous_frames: null
-  oracle: False
+  oracle: True
 
 dataloader:
   _target_: config.DataloaderConfig
-  train_batch_size: 6
+  train_batch_size: 12
   val_batch_size: 4
   num_workers: 4
 
@@ -78,13 +52,22 @@ model:
   image_encoder_name: "lambdalabs/sd-image-variations-diffusers" # "openai/clip-vit-large-patch14"
   image_encoder_revision: "v2.0"
   train_unet: True
-  train_control_net: True
-  use_control_net: True
+  train_control_net: False
   lora_rank: 4
   use_ip_adapter: False
   ip_adapter_scale: 0.8
   use_mapper: False
   use_lstm: False
+  use_control_net: False
+
+mapper:
+  _target_: config.MapperConfig
+  train: False
+
+lstm:
+  _target_: config.LSTMConfig
+  train: False
+
 
 gradient_accumulation_steps: 1
 num_train_epochs: 350
@@ -94,7 +77,6 @@ checkpointing_steps: 750
 checkpoints_total_limit: null
 prediction_steps: 100
 predictions_dir_name: "predictions"
-use_custom_inference: False
 
 max_grad_norm: 1.0
 

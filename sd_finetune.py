@@ -28,7 +28,9 @@ from trainer import Trainer
 # cs.store(name="base_dataloader", node=DataloaderConfig)
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="train_config")
+@hydra.main(
+    version_base=None, config_path="conf", config_name="train_config_sd_ft"
+)
 def main(cfg: TrainerConfig) -> None:
     cfg = instantiate(cfg)
 
@@ -51,36 +53,9 @@ def main(cfg: TrainerConfig) -> None:
         size=cfg.dataset.resolution,
         center_crop=cfg.dataset.center_crop,
         transform=transform,
-        max_previous_frames=cfg.dataset.max_previous_frames,
-        oracle=cfg.dataset.oracle,
+        max_previous_frames=1,
+        oracle=True,
     )
-
-    if cfg.model.use_mapper:
-        mapper = Mapper(
-            in_channels=cfg.mapper.in_channels,  # Number of input features
-            hidden_channels=cfg.mapper.hidden_channels,  # List specifying the size of each hidden layer
-            norm_layer=cfg.mapper.norm_layer,  # No normalization layer
-            activation_layer=cfg.mapper.activation_layer,  # Using ReLU as the activation function
-            inplace=cfg.mapper.inplace,  # In-place operation for activation
-            bias=cfg.mapper.bias,  # Using bias in linear layers
-            dropout=cfg.mapper.dropout,  # No dropout
-            device=cfg.device,
-            dtype=cfg.dtype,
-            train_mapper=cfg.mapper.train,
-        )
-
-    if cfg.model.use_lstm:
-        lstm = LSTMModel(
-            input_size=cfg.lstm.input_size,
-            num_layers=cfg.lstm.num_layers,
-            hidden_size=cfg.lstm.hidden_size,
-            bias=cfg.lstm.bias,
-            batch_first=cfg.lstm.batch_first,
-            dropout=cfg.lstm.dropout,
-            bidirectional=cfg.lstm.bidirectional,
-            proj_size=cfg.lstm.proj_size,
-            train_lstm=cfg.lstm.train,
-        )
 
     # Model creation
     model = StableDiffusion1xImageVariation(
@@ -91,19 +66,9 @@ def main(cfg: TrainerConfig) -> None:
         device=cfg.device,
         dtype=cfg.dtype,
         train_lora_adapter=cfg.model.train_unet,
-        controlnet=(
-            ControlNet(
-                model_name="lllyasviel/sd-controlnet-seg",
-                device=cfg.device,
-                dtype=cfg.dtype,
-                train_lora_adapter=cfg.model.train_control_net,
-                lora_rank=cfg.model.lora_rank,
-            )
-            if cfg.model.use_control_net
-            else None
-        ),
-        mapper=mapper if cfg.model.use_mapper else None,
-        lstm=lstm if cfg.model.use_lstm else None,
+        controlnet=None,
+        mapper=None,
+        lstm=None,
     )
 
     # Enable TF32 for faster training on Ampere GPUs,
@@ -118,36 +83,6 @@ def main(cfg: TrainerConfig) -> None:
             {
                 "params": model.unet_trainable_parameters,
                 "lr": cfg.lr.unet
-                * cfg.gradient_accumulation_steps
-                * cfg.dataloader.train_batch_size
-                * cfg.num_processes,
-            }
-        )
-    if cfg.model.train_control_net:
-        params_to_optimize.append(
-            {
-                "params": model.controlnet.trainable_parameters,
-                "lr": cfg.lr.controlnet
-                * cfg.gradient_accumulation_steps
-                * cfg.dataloader.train_batch_size
-                * cfg.num_processes,
-            }
-        )
-    if cfg.model.use_mapper:
-        params_to_optimize.append(
-            {
-                "params": model.mapper.parameters(),
-                "lr": cfg.lr.mapper
-                * cfg.gradient_accumulation_steps
-                * cfg.dataloader.train_batch_size
-                * cfg.num_processes,
-            }
-        )
-    if cfg.model.use_lstm:
-        params_to_optimize.append(
-            {
-                "params": model.lstm.parameters(),
-                "lr": cfg.lr.lstm
                 * cfg.gradient_accumulation_steps
                 * cfg.dataloader.train_batch_size
                 * cfg.num_processes,
@@ -175,9 +110,9 @@ def main(cfg: TrainerConfig) -> None:
         path=cfg.dataset.dataset_path / "uavid_val",
         size=cfg.dataset.resolution,
         center_crop=cfg.dataset.center_crop,
-        indices=[0, 5, 10, 15],  # , 20, 25, 30, 35, 40, 45, 50, 55, 60],
+        indices=[0, 5, 10, 15],  # 20, 25, 30, 35, 40, 45, 50, 55, 60],
         max_previous_frames=cfg.dataset.max_previous_frames,
-        oracle=cfg.dataset.oracle,
+        oracle=True,
     )
 
     val_dataloader = torch.utils.data.DataLoader(

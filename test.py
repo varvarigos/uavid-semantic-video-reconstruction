@@ -9,7 +9,7 @@ from datasets import (
     UavidDatasetWithTransform,
     uavid_collate_fn,
 )
-from models import ControlNet, Mapper, StableDiffusion1xImageVariation
+from models import ControlNet, LSTMModel, Mapper, StableDiffusion1xImageVariation
 from trainer import Trainer
 
 FUTURE_STEPS = 1  # 1 - 9
@@ -33,6 +33,20 @@ def main(cfg: TrainerConfig) -> None:
             dtype=cfg.dtype,
             train_mapper=cfg.mapper.train,
         )
+    if cfg.model.use_lstm:
+        lstm = LSTMModel(
+            input_size=cfg.lstm.input_size,
+            num_layers=cfg.lstm.num_layers,
+            hidden_size=cfg.lstm.hidden_size,
+            bias=cfg.lstm.bias,
+            batch_first=cfg.lstm.batch_first,
+            dropout=cfg.lstm.dropout,
+            bidirectional=cfg.lstm.bidirectional,
+            proj_size=cfg.lstm.proj_size,
+            device=cfg.device,
+            dtype=cfg.dtype,
+            train_lstm=cfg.lstm.train,
+        )
 
     # Model creation
     model = StableDiffusion1xImageVariation(
@@ -55,6 +69,7 @@ def main(cfg: TrainerConfig) -> None:
             else None
         ),
         mapper=mapper if cfg.model.use_mapper else None,
+        lstm=lstm if cfg.model.use_lstm else None,
     )
 
     # Enable TF32 for faster training on Ampere GPUs,
@@ -89,6 +104,7 @@ def main(cfg: TrainerConfig) -> None:
     # Prepare everything with our `accelerator`.
     to_prepare = (
         ([model.mapper] if cfg.mapper.train else [])
+        + ([model.lstm] if cfg.lstm.train else [])
         + ([model.controlnet] if cfg.model.train_control_net else [])
         + ([model.unet] if cfg.model.train_unet else [])
         + [
@@ -98,6 +114,8 @@ def main(cfg: TrainerConfig) -> None:
     prepared = list(trainer.accelerator.prepare(*to_prepare))
     if cfg.mapper.train:
         model.mapper = prepared.pop(0)
+    if cfg.lstm.train:
+        model.lstm = prepared.pop(0)
     if cfg.model.train_control_net:
         model.controlnet = prepared.pop(0)
     if cfg.model.train_unet:
@@ -133,6 +151,8 @@ def main(cfg: TrainerConfig) -> None:
     model.unet.requires_grad_(False)
     if cfg.model.use_mapper:
         model.mapper.requires_grad_(False)
+    if cfg.model.use_lstm:
+        model.lstm.requires_grad_(False)
     if cfg.model.use_control_net:
         model.controlnet.requires_grad_(False)
 
@@ -148,6 +168,9 @@ def main(cfg: TrainerConfig) -> None:
                 if val_dataset.shift_indices == 0
                 else f"step_{val_dataset.shift_indices}_g"
             ),
+            use_custom_inference=cfg.use_custom_inference,
+            no_progress_bar=True,
+            guidance_scale=cfg.guidance_scale,
         )
     )
     cur_dataset = val_dataset
@@ -170,7 +193,11 @@ def main(cfg: TrainerConfig) -> None:
         )
         predictions.append(
             trainer.validation(
-                model, val_dataloader, output_name=f"step_{step}"
+                model,
+                val_dataloader,
+                output_name=f"step_{step}",
+                use_custom_inference=cfg.use_custom_inference,
+                no_progress_bar=True,
             )
         )
 

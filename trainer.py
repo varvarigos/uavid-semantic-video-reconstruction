@@ -4,7 +4,12 @@ import torch
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration
-from diffusers import StableDiffusionPipeline
+from diffusers import (
+    DDIMScheduler,
+    PNDMScheduler,
+    StableDiffusionControlNetImg2ImgPipeline,
+    StableDiffusionPipeline,
+)
 from diffusers.pipelines import StableDiffusionControlNetPipeline
 from torch import nn
 from torch.utils.data import DataLoader
@@ -59,6 +64,7 @@ class Trainer:
         # Prepare everything with our `accelerator`.
         to_prepare = (
             ([model.mapper] if self.cfg.mapper.train else [])
+            + ([model.lstm] if self.cfg.lstm.train else [])
             + ([model.controlnet] if self.cfg.model.train_control_net else [])
             + ([model.unet] if self.cfg.model.train_unet else [])
             + [
@@ -70,6 +76,8 @@ class Trainer:
         prepared = list(self.accelerator.prepare(*to_prepare))
         if self.cfg.mapper.train:
             model.mapper = prepared.pop(0)
+        if self.cfg.lstm.train:
+            model.lstm = prepared.pop(0)
         if self.cfg.model.train_control_net:
             model.controlnet = prepared.pop(0)
         if self.cfg.model.train_unet:
@@ -77,21 +85,6 @@ class Trainer:
         optimizer = prepared.pop(0)
         train_dataloader = prepared.pop(0)
         lr_scheduler = prepared.pop(0)
-        # (
-        #     model.mapper,
-        #     model.controlnet,
-        #     model.unet,
-        #     optimizer,
-        #     train_dataloader,
-        #     lr_scheduler,
-        # ) = self.accelerator.prepare(
-        #     model.mapper,
-        #     model.controlnet,
-        #     model.unet,
-        #     optimizer,
-        #     train_dataloader,
-        #     lr_scheduler,
-        # )
 
         self.cfg.post_prepare_init(train_dataloader)
 
@@ -109,9 +102,7 @@ class Trainer:
         self.logger.info(
             f"  Gradient Accumulation steps = {self.cfg.gradient_accumulation_steps}"
         )
-        self.logger.info(
-            f"  Total optimization steps = {self.cfg.max_train_steps}"
-        )
+        self.logger.info(f"  Total optimization steps = {self.cfg.max_train_steps}")
 
         # Print Parameter Stats
         unet_param_stats = get_parameters_stats(model.unet.parameters())
@@ -119,9 +110,7 @@ class Trainer:
             f"  Trainable UNet LoRA Parameters: {unet_param_stats['trainable']}/{unet_param_stats['all']}"
         )
         if model.controlnet:
-            controlnet_param_stats = get_parameters_stats(
-                model.controlnet.parameters()
-            )
+            controlnet_param_stats = get_parameters_stats(model.controlnet.parameters())
             self.logger.info(
                 f"  Trainable ControlNet LoRA Parameters: {controlnet_param_stats['trainable']}/{controlnet_param_stats['all']}"
             )
@@ -129,6 +118,11 @@ class Trainer:
             mapper_param_stats = get_parameters_stats(model.mapper.parameters())
             self.logger.info(
                 f"  Trainable Mapper Parameters: {mapper_param_stats['trainable']}/{mapper_param_stats['all']}"
+            )
+        if self.cfg.model.use_lstm:
+            lstm_param_stats = get_parameters_stats(model.lstm.parameters())
+            self.logger.info(
+                f"  Trainable LSTM Parameters: {lstm_param_stats['trainable']}/{lstm_param_stats['all']}"
             )
 
         self.global_step = 0
@@ -200,15 +194,12 @@ class Trainer:
                     for k, v in batch.items():
                         if k == "pixel_values_clip":
                             # v is a list of tensors
-                            batch[k] = [
-                                vi.to(device=self.cfg.device) for vi in v
-                            ]
+                            batch[k] = [vi.to(device=self.cfg.device) for vi in v]
                             if torch.is_floating_point(
                                 v[0]
                             ) and self.cfg.device != torch.device("cpu"):
                                 batch[k] = [
-                                    vi.to(dtype=self.cfg.dtype)
-                                    for vi in batch[k]
+                                    vi.to(dtype=self.cfg.dtype) for vi in batch[k]
                                 ]
                         else:
                             batch[k] = v.to(device=self.cfg.device)
@@ -240,18 +231,18 @@ class Trainer:
                             self.logger.info("Saved state")
 
                         if self.global_step % self.cfg.prediction_steps == 0:
+                            model.eval()
+
                             self.validation(
-                                model=model, val_dataloader=val_dataloder
+                                model=model,
+                                val_dataloader=val_dataloder,
+                                use_custom_inference=self.cfg.use_custom_inference,
                             )
                             model.train()
                 lrs = lr_scheduler.get_lr()
                 logs = (
                     {"loss": loss.detach().item()}
-                    | (
-                        {"lr_unet": lrs.pop(0)}
-                        if self.cfg.model.train_unet
-                        else {}
-                    )
+                    | ({"lr_unet": lrs.pop(0)} if self.cfg.model.train_unet else {})
                     | (
                         {"lr_cntrl": lrs.pop(0)}
                         if self.cfg.model.train_control_net
@@ -262,6 +253,11 @@ class Trainer:
                         if self.cfg.mapper.train and self.cfg.model.use_mapper
                         else {}
                     )
+                    | (
+                        {"lr_lstm": lrs.pop(0)}
+                        if self.cfg.lstm.train and self.cfg.model.use_lstm
+                        else {}
+                    )
                 )
                 progress_bar.set_postfix(**logs)
                 self.accelerator.log(logs, step=self.global_step)
@@ -270,6 +266,8 @@ class Trainer:
                     break
 
             print(total_loss / len(train_dataloader.dataset))
+            epoch_logs = {"epoch": self.epoch, "loss_epoch": total_loss}
+            self.accelerator.log(epoch_logs, step=self.global_step)
 
         ## Finish Up Training
 
@@ -299,43 +297,55 @@ class Trainer:
         model: nn.Module,
         val_dataloader: DataLoader,
         output_name: str | None = None,
+        use_custom_inference: bool = True,
+        no_progress_bar: bool = True,
+        guidance_scale: float = 1,
     ):
         model.eval()
         generator = torch.manual_seed(42)
 
-        if model.controlnet:
-            pipe = StableDiffusionControlNetPipeline.from_pretrained(
-                "CompVis/stable-diffusion-v1-4",
-                safety_checker=None,
-                torch_dtype=self.cfg.dtype,
-                controlnet=model.controlnet.controlnet,
-                unet=model.unet,
-                vae=model.vae.to(torch.float32),
-            ).to(device=self.cfg.device)
-        else:
-            pipe = StableDiffusionPipeline.from_pretrained(
-                "CompVis/stable-diffusion-v1-4",
-                safety_checker=None,
-                torch_dtype=self.cfg.dtype,
-                unet=model.unet,
-                vae=model.vae.to(torch.float32),
-            ).to(device=self.cfg.device)
+        if not use_custom_inference:
+            if model.controlnet:
+                pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
+                    "CompVis/stable-diffusion-v1-4",
+                    safety_checker=None,
+                    torch_dtype=self.cfg.dtype,
+                    controlnet=model.controlnet.controlnet,
+                    unet=model.unet,
+                    vae=model.vae.to(torch.float32),
+                    scheduler=model.train_noise_scheduler,
+                ).to(device=self.cfg.device)
+            else:
+                pipe = StableDiffusionPipeline.from_pretrained(
+                    "CompVis/stable-diffusion-v1-4",
+                    safety_checker=None,
+                    torch_dtype=self.cfg.dtype,
+                    unet=model.unet,
+                    vae=model.vae.to(torch.float32),
+                    scheduler=model.train_noise_scheduler,
+                ).to(device=self.cfg.device)
 
-        if self.cfg.model.use_ip_adapter:
-            # pipe.load_ip_adapter(
-            #     "h94/IP-Adapter",
-            #     subfolder="models",
-            #     weight_name="ip-adapter_sd15.bin",
-            # )
-            pipe.load_ip_adapter(
-                "h94/IP-Adapter",
-                subfolder="models",
-                weight_name="ip-adapter-plus_sd15.bin",
+            if self.cfg.model.use_ip_adapter:
+                # pipe.load_ip_adapter(
+                #     "h94/IP-Adapter",
+                #     subfolder="models",
+                #     weight_name="ip-adapter_sd15.bin",
+                # )
+                pipe.load_ip_adapter(
+                    "h94/IP-Adapter",
+                    subfolder="models",
+                    weight_name="ip-adapter-plus_sd15.bin",
+                )
+
+                if self.cfg.model.ip_adapter_scale:
+                    pipe.set_ip_adapter_scale(self.cfg.model.ip_adapter_scale)
+
+        if use_custom_inference:
+            # PNDMScheduler, DDIMScheduler
+            scheduler = PNDMScheduler.from_pretrained(
+                "lambdalabs/sd-image-variations-diffusers",
+                subfolder="scheduler",
             )
-
-            if self.cfg.model.ip_adapter_scale:
-                pipe.set_ip_adapter_scale(self.cfg.model.ip_adapter_scale)
-
         images = []
         gt_images = []
         seg_maps = []
@@ -349,9 +359,7 @@ class Trainer:
                         if torch.is_floating_point(
                             v[0]
                         ) and self.cfg.device != torch.device("cpu"):
-                            batch[k] = [
-                                vi.to(dtype=self.cfg.dtype) for vi in batch[k]
-                            ]
+                            batch[k] = [vi.to(dtype=self.cfg.dtype) for vi in batch[k]]
                     else:
                         batch[k] = v.to(device=self.cfg.device)
                         if torch.is_floating_point(
@@ -359,63 +367,88 @@ class Trainer:
                         ) and self.cfg.device != torch.device("cpu"):
                             batch[k] = batch[k].to(dtype=self.cfg.dtype)
 
-                encoder_hidden_states = [
-                    model.image_encoder(
-                        previous_frames_i
-                    ).image_embeds.unsqueeze(
-                        1
-                    )  # --> tensor[Ni x 1 x F]
-                    for previous_frames_i in batch["pixel_values_clip"]
-                ]
-
-                ## IF AVERAGE (not LSTM)
-                encoder_hidden_states = torch.stack(
-                    [i.mean(dim=0) for i in encoder_hidden_states]  # tensor[F]
-                )  # tensor[batch_size x 1 x F]
-
-                # encoder_hidden_states = model.image_encoder(
-                #     batch["pixel_values_clip"]
-                # ).image_embeds.unsqueeze(1)
-
-                if self.cfg.model.use_mapper:
-                    encoder_hidden_states = model.mapper(
-                        encoder_hidden_states.to(dtype=model.mapper.dtype)
-                    ).to(dtype=model.image_encoder.dtype)
-
-                seg_maps.extend(tensor_to_pil(batch["segmentation_mask"]))
-                gt_images.extend(tensor_to_pil(batch["pixel_values"]))
-                pipe.set_progress_bar_config(disable=True)
-                with self.accelerator.autocast():
-                    for (
-                        encoder_hidden_state,
-                        segmentation_mask,
-                        gt_image,
-                    ) in zip(
-                        encoder_hidden_states,
-                        batch["segmentation_mask"],
-                        batch["pixel_values"],
-                    ):
+                if use_custom_inference:
+                    with self.accelerator.autocast():
+                        seg_maps.extend(tensor_to_pil(batch["segmentation_mask"]))
+                        gt_images.extend(tensor_to_pil(batch["pixel_values"]))
                         images.extend(
-                            pipe(
-                                prompt_embeds=encoder_hidden_state.unsqueeze(0),
-                                negative_prompt_embeds=torch.zeros_like(
-                                    encoder_hidden_state
-                                ).unsqueeze(0),
-                                image=tensor_to_pil(segmentation_mask),
-                                ip_adapter_image=(
-                                    # TODO: this is wrong, we must use the
-                                    # previous image here or some average
-                                    # embeding of the previous images directly
-                                    # into `ip_adapter_image_embeds``
-                                    tensor_to_pil(gt_image)
-                                    if self.cfg.model.use_ip_adapter
-                                    else None
-                                ),
+                            model.validation_step(
+                                batch,
+                                noise_scheduler=scheduler,
                                 num_inference_steps=100,
-                                guidance_scale=5,
+                                guidance_scale=guidance_scale,
+                                device=self.cfg.device,
+                                dtype=self.cfg.dtype,
                                 generator=generator,
-                            ).images
+                                no_progress_bar=no_progress_bar,
+                            )
                         )
+                else:
+                    encoder_hidden_states = [
+                        model.image_encoder(previous_frames_i).image_embeds.unsqueeze(
+                            1
+                        )  # --> tensor[Ni x 1 x F]
+                        for previous_frames_i in batch["pixel_values_clip"]
+                    ]
+
+                    if self.cfg.model.use_lstm:
+                        lstm_outputs = []
+                        for sequence_of_previous_frames in encoder_hidden_states:
+                            output, _ = model.lstm(
+                                sequence_of_previous_frames.to(dtype=model.lstm.dtype)
+                            )
+                            lstm_outputs.append(output[-1])
+                        encoder_hidden_states = torch.stack(lstm_outputs)
+                    else:
+                        encoder_hidden_states = torch.stack(
+                            [
+                                i.mean(dim=0) for i in encoder_hidden_states
+                            ]  # tensor[1 x F]
+                        )  # tensor[batch_size x 1 x F]
+
+                    if self.cfg.model.use_mapper:
+                        encoder_hidden_states = model.mapper(
+                            encoder_hidden_states.to(dtype=model.mapper.dtype)
+                        ).to(dtype=model.image_encoder.dtype)
+
+                    seg_maps.extend(tensor_to_pil(batch["segmentation_mask"]))
+                    gt_images.extend(tensor_to_pil(batch["pixel_values"]))
+                    pipe.set_progress_bar_config(disable=True)
+                    with self.accelerator.autocast():
+                        for (
+                            encoder_hidden_state,
+                            segmentation_mask,
+                            gt_image,
+                            prev_img,
+                        ) in zip(
+                            encoder_hidden_states,
+                            batch["segmentation_mask"],
+                            batch["pixel_values"],
+                            batch["pixel_values_prev"],
+                        ):
+                            images.extend(
+                                pipe(
+                                    prompt_embeds=encoder_hidden_state.unsqueeze(0),
+                                    negative_prompt_embeds=torch.zeros_like(
+                                        encoder_hidden_state
+                                    ).unsqueeze(0),
+                                    image=tensor_to_pil(prev_img),
+                                    control_image=tensor_to_pil(segmentation_mask),
+                                    ip_adapter_image=(
+                                        # TODO: this is wrong, we must use the
+                                        # previous image here or some average
+                                        # embeding of the previous images directly
+                                        # into `ip_adapter_image_embeds``
+                                        tensor_to_pil(gt_image)
+                                        if self.cfg.model.use_ip_adapter
+                                        else None
+                                    ),
+                                    num_inference_steps=100,
+                                    guidance_scale=guidance_scale,
+                                    generator=generator,
+                                    strength=0.8,
+                                ).images
+                            )
 
         grid = image_grid(
             [val for tup in zip(images, gt_images, seg_maps) for val in tup],
@@ -434,7 +467,14 @@ class Trainer:
             )
         )
 
-        if self.cfg.model.use_ip_adapter:
+        if self.cfg.model.use_ip_adapter and not use_custom_inference:
+            pipe.unload_ip_adapter()
+
+        model.vae.to(self.cfg.dtype)
+        return grid
+        model.vae.to(self.cfg.dtype)
+        return grid
+        if self.cfg.model.use_ip_adapter and not use_custom_inference:
             pipe.unload_ip_adapter()
 
         model.vae.to(self.cfg.dtype)

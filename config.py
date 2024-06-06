@@ -44,11 +44,24 @@ class MapperConfig:
 
 
 @dataclass
+class LSTMConfig:
+    input_size: int = 768
+    num_layers: int = 2
+    hidden_size: int = 768
+    bias: bool = True
+    batch_first: bool = False
+    dropout: float = 0.0
+    bidirectional: bool = False
+    proj_size: int = 0
+    train: bool = False
+
+
+@dataclass
 class LearningRateConfig:
     unet: float = 1e-3
     controlnet: float = 1e-4
     mapper: float = 7.5e-3
-
+    lstm: float = 1e-3
     scale: bool = True
 
 
@@ -102,6 +115,7 @@ class ModelConfig:
     use_ip_adapter: bool = False
     ip_adapter_scale: float | None = None
     use_mapper: bool = True
+    use_lstm: bool = True
 
 
 @dataclass
@@ -129,8 +143,12 @@ class TrainerConfig:
     allow_tf32: bool = False
     logger: str = "tensorboard"
 
+    use_custom_inference: bool = False
+    guidance_scale: float = 3
+
     eval_script: EvalConfig = field(default_factory=EvalConfig)
     mapper: MapperConfig = field(default_factory=MapperConfig)
+    lstm: LSTMConfig = field(default_factory=LSTMConfig)
     lr: LearningRateConfig = field(default_factory=LearningRateConfig)
     lr_scheduler: LRSchedulerConfig = field(default_factory=LRSchedulerConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
@@ -148,9 +166,7 @@ class TrainerConfig:
         self.dtype = torch.float16 if self.dtype == "fp16" else torch.float32
 
         self.use_checkpoint = (
-            Path(self.use_checkpoint)
-            if self.use_checkpoint is not None
-            else None
+            Path(self.use_checkpoint) if self.use_checkpoint is not None else None
         )
 
         # date = datetime.today().strftime("%Y-%m-%d__%H-%M-%S")

@@ -2,7 +2,7 @@ hydra:
   job:
     chdir: True
   run:
-    dir: outputs/test/fixed/ground_truth_upper_bound/combined_sd_1_5
+    dir: outputs/test/fixed/averaging/2024-05-25__03-48-51/checkpoint_12/guidance_2_0p8img2img/
     # dir: outputs/test/fixed/ground_truth/${now:%Y-%m-%d__%H-%M-%S}
 
 _target_: config.TrainerConfig
@@ -16,6 +16,17 @@ mapper:
   inplace: null
   bias: True
   dropout: 0.2
+
+lstm:
+  _target_: config.LSTMConfig
+  input_size: 768
+  hidden_size: 768
+  num_layers: 2
+  bias: True
+  batch_first: False
+  dropout: 0.2
+  bidirectional: False
+  proj_size: 0
 
 dataset:
   _target_: config.DatasetConfig
@@ -42,8 +53,12 @@ model:
   use_ip_adapter: False
   ip_adapter_scale: 0.8
   use_mapper: False
+  use_lstm: False
 
-use_checkpoint: "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/combined_sd_1_5/checkpoints/checkpoint_0"
+use_custom_inference: False
+guidance_scale: 2
+
+use_checkpoint: "/teamspace/studios/this_studio/outputs/fixed/averaging/2024-05-25__03-48-51/checkpoints/checkpoint_12"
 
 output_dir: "."
 local_rank: -1

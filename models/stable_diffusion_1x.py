@@ -5,6 +5,7 @@ from peft import LoraConfig
 from torch import nn
 
 from .controlnet import ControlNet
+from .lstm import LSTMModel
 from .mapper import Mapper
 
 
@@ -19,6 +20,7 @@ class StableDiffusion1x(nn.Module):
         train_lora_adapter: bool = False,
         lora_rank: int = 4,
         mapper: Mapper | None = None,
+        lstm: LSTMModel | None = None,
     ):
         super().__init__()
 
@@ -39,6 +41,7 @@ class StableDiffusion1x(nn.Module):
         )
         self.controlnet = controlnet
         self.mapper = mapper
+        self.lstm = lstm
 
         # We only train the additional adapter LoRA layers
         self.vae.requires_grad_(False)
@@ -76,6 +79,7 @@ class StableDiffusion1x(nn.Module):
             self.unet_trainable_parameters
             + (self.controlnet.trainable_parameters if self.controlnet else [])
             + (self.mapper.trainable_parameters if self.mapper else [])
+            + (self.lstm.trainable_parameters if self.lstm else [])
         )
 
     def train(self, mode=True):
@@ -84,6 +88,8 @@ class StableDiffusion1x(nn.Module):
             self.controlnet.train(mode)
         if self.mapper and self.mapper.trainable_parameters:
             self.mapper.train(mode)
+        if self.lstm and self.lstm.trainable_parameters:
+            self.lstm.train(mode)
         self.vae.train(False)
 
     def forward(self, x):
