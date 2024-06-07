@@ -70,7 +70,9 @@ class UavidDatasetWithTransform(Dataset):
 
         self.vae_transforms = T.Compose(
             [
-                T.Resize((size, size), interpolation=T.InterpolationMode.BILINEAR),
+                T.Resize(
+                    (size, size), interpolation=T.InterpolationMode.BILINEAR
+                ),
                 T.CenterCrop(
                     size
                 ),  # (T.CenterCrop(size) if center_crop else T.RandomCrop(size)),
@@ -98,7 +100,9 @@ class UavidDatasetWithTransform(Dataset):
 
         self.conditioning_image_transforms = T.Compose(
             [
-                T.Resize((size, size), interpolation=T.InterpolationMode.BILINEAR),
+                T.Resize(
+                    (size, size), interpolation=T.InterpolationMode.BILINEAR
+                ),
                 T.CenterCrop(size),
                 T.ToTensor(),
             ]
@@ -161,7 +165,8 @@ class UavidDatasetWithTransform(Dataset):
             current_frame = current_frame.convert("RGB")
         if not previous_frames[0].mode == "RGB":
             previous_frame = [
-                previous_frame.convert("RGB") for previous_frame in previous_frames
+                previous_frame.convert("RGB")
+                for previous_frame in previous_frames
             ]
         if not current_segmentation_map.mode == "RGB":
             current_segmentation_map = current_segmentation_map.convert("RGB")
@@ -174,7 +179,9 @@ class UavidDatasetWithTransform(Dataset):
 
             used_transform = transformed["replay"]
             previous_frames = [
-                A.ReplayCompose.replay(used_transform, image=np.asarray(previous_frame))
+                A.ReplayCompose.replay(
+                    used_transform, image=np.asarray(previous_frame)
+                )
                 for previous_frame in previous_frames
             ]
 
@@ -199,6 +206,7 @@ class UavidDatasetWithTransform(Dataset):
         example["segmentation_mask"] = self.conditioning_image_transforms(
             current_segmentation_map
         )
+        example["pixel_values_prev"] = self.vae_transforms(previous_frames[-1])
         return example
 
 
@@ -248,7 +256,9 @@ class PredictionsUavidDataset(Dataset):
         self.center_crop = self.orig_dataset.center_crop
         self.transform = self.orig_dataset.transform
         self.vae_transforms = self.orig_dataset.vae_transforms
-        self.input_img_encdr_trnsfrms = self.orig_dataset.input_img_encdr_trnsfrms
+        self.input_img_encdr_trnsfrms = (
+            self.orig_dataset.input_img_encdr_trnsfrms
+        )
         self.conditioning_image_transforms = (
             self.orig_dataset.conditioning_image_transforms
         )
@@ -268,7 +278,9 @@ class PredictionsUavidDataset(Dataset):
             # cut each image from the first column of the prediction
             for i in range(num_images):
                 self.predicted_imgs[i].append(
-                    prediction.crop((0, i * img_size, img_size, (i + 1) * img_size))
+                    prediction.crop(
+                        (0, i * img_size, img_size, (i + 1) * img_size)
+                    )
                 )
 
     def __len__(self):
@@ -333,7 +345,8 @@ class PredictionsUavidDataset(Dataset):
             current_frame = current_frame.convert("RGB")
         if not previous_frames[0].mode == "RGB":
             previous_frame = [
-                previous_frame.convert("RGB") for previous_frame in previous_frames
+                previous_frame.convert("RGB")
+                for previous_frame in previous_frames
             ]
         if not current_segmentation_map.mode == "RGB":
             current_segmentation_map = current_segmentation_map.convert("RGB")
@@ -346,7 +359,9 @@ class PredictionsUavidDataset(Dataset):
 
             used_transform = transformed["replay"]
             previous_frames = [
-                A.ReplayCompose.replay(used_transform, image=np.asarray(previous_frame))
+                A.ReplayCompose.replay(
+                    used_transform, image=np.asarray(previous_frame)
+                )
                 for previous_frame in previous_frames
             ]
 

@@ -9,7 +9,12 @@ from datasets import (
     UavidDatasetWithTransform,
     uavid_collate_fn,
 )
-from models import ControlNet, LSTMModel, Mapper, StableDiffusion1xImageVariation
+from models import (
+    ControlNet,
+    LSTMModel,
+    Mapper,
+    StableDiffusion1xImageVariation,
+)
 from trainer import Trainer
 
 FUTURE_STEPS = 1  # 1 - 9
@@ -78,11 +83,13 @@ def main(cfg: TrainerConfig) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
 
     # val_dataloader ....
+    # 0, 2, 5, 7, 10, 12, 15, ..., 57, 60
+    indices = [2 * i + i // 2 for i in range(25)]
     val_dataset = UavidDatasetWithTransform(
         path=cfg.dataset.dataset_path / "uavid_val",
         size=cfg.dataset.resolution,
         center_crop=cfg.dataset.center_crop,
-        indices=[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60],
+        indices=indices,
         max_previous_frames=cfg.dataset.max_previous_frames,
         oracle=cfg.dataset.oracle,
         prediction_steps=FUTURE_STEPS,

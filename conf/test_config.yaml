@@ -2,7 +2,7 @@ hydra:
   job:
     chdir: True
   run:
-    dir: outputs/test/fixed/averaging/2024-05-25__03-48-51/checkpoint_12/guidance_2_0p8img2img/
+    dir: outputs/test/fixed/averaging/2024-05-25__03-48-51/checkpoint_12/guidance_3_imgvar_steps_300_more/
     # dir: outputs/test/fixed/ground_truth/${now:%Y-%m-%d__%H-%M-%S}
 
 _target_: config.TrainerConfig
@@ -54,9 +54,10 @@ model:
   ip_adapter_scale: 0.8
   use_mapper: False
   use_lstm: False
+  use_img2img_inference: False
 
 use_custom_inference: False
-guidance_scale: 2
+guidance_scale: 3
 
 use_checkpoint: "/teamspace/studios/this_studio/outputs/fixed/averaging/2024-05-25__03-48-51/checkpoints/checkpoint_12"
 

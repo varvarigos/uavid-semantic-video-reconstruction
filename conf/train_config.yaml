@@ -8,7 +8,7 @@ _target_: config.TrainerConfig
 
 eval_script:
     _target_: config.EvalConfig
-    images_path: "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/combined_sd_1_5/predictions/epoch_27_step_800.png"
+    images_path: "/teamspace/studios/this_studio/outputs/test/fixed/averaging/2024-05-25__03-48-51/checkpoint_12/guidance_2_0p7img2img_steps300/predictions/step_0.png"
     evaluate: True
 
 mapper:
@@ -85,6 +85,7 @@ model:
   ip_adapter_scale: 0.8
   use_mapper: False
   use_lstm: False
+  use_img2img_inference: False
 
 gradient_accumulation_steps: 1
 num_train_epochs: 350

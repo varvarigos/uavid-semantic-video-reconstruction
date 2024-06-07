@@ -116,6 +116,7 @@ class ModelConfig:
     ip_adapter_scale: float | None = None
     use_mapper: bool = True
     use_lstm: bool = True
+    use_img2img_inference: bool = False
 
 
 @dataclass
@@ -166,7 +167,9 @@ class TrainerConfig:
         self.dtype = torch.float16 if self.dtype == "fp16" else torch.float32
 
         self.use_checkpoint = (
-            Path(self.use_checkpoint) if self.use_checkpoint is not None else None
+            Path(self.use_checkpoint)
+            if self.use_checkpoint is not None
+            else None
         )
 
         # date = datetime.today().strftime("%Y-%m-%d__%H-%M-%S")

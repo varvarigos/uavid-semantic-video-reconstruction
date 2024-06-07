@@ -4,10 +4,10 @@ import torch
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration
-from diffusers import (
-    DDIMScheduler,
+from diffusers import (  # DDIMScheduler,
     PNDMScheduler,
     StableDiffusionControlNetImg2ImgPipeline,
+    StableDiffusionImg2ImgPipeline,
     StableDiffusionPipeline,
 )
 from diffusers.pipelines import StableDiffusionControlNetPipeline
@@ -102,7 +102,9 @@ class Trainer:
         self.logger.info(
             f"  Gradient Accumulation steps = {self.cfg.gradient_accumulation_steps}"
         )
-        self.logger.info(f"  Total optimization steps = {self.cfg.max_train_steps}")
+        self.logger.info(
+            f"  Total optimization steps = {self.cfg.max_train_steps}"
+        )
 
         # Print Parameter Stats
         unet_param_stats = get_parameters_stats(model.unet.parameters())
@@ -110,7 +112,9 @@ class Trainer:
             f"  Trainable UNet LoRA Parameters: {unet_param_stats['trainable']}/{unet_param_stats['all']}"
         )
         if model.controlnet:
-            controlnet_param_stats = get_parameters_stats(model.controlnet.parameters())
+            controlnet_param_stats = get_parameters_stats(
+                model.controlnet.parameters()
+            )
             self.logger.info(
                 f"  Trainable ControlNet LoRA Parameters: {controlnet_param_stats['trainable']}/{controlnet_param_stats['all']}"
             )
@@ -194,12 +198,15 @@ class Trainer:
                     for k, v in batch.items():
                         if k == "pixel_values_clip":
                             # v is a list of tensors
-                            batch[k] = [vi.to(device=self.cfg.device) for vi in v]
+                            batch[k] = [
+                                vi.to(device=self.cfg.device) for vi in v
+                            ]
                             if torch.is_floating_point(
                                 v[0]
                             ) and self.cfg.device != torch.device("cpu"):
                                 batch[k] = [
-                                    vi.to(dtype=self.cfg.dtype) for vi in batch[k]
+                                    vi.to(dtype=self.cfg.dtype)
+                                    for vi in batch[k]
                                 ]
                         else:
                             batch[k] = v.to(device=self.cfg.device)
@@ -242,7 +249,11 @@ class Trainer:
                 lrs = lr_scheduler.get_lr()
                 logs = (
                     {"loss": loss.detach().item()}
-                    | ({"lr_unet": lrs.pop(0)} if self.cfg.model.train_unet else {})
+                    | (
+                        {"lr_unet": lrs.pop(0)}
+                        if self.cfg.model.train_unet
+                        else {}
+                    )
                     | (
                         {"lr_cntrl": lrs.pop(0)}
                         if self.cfg.model.train_control_net
@@ -303,27 +314,48 @@ class Trainer:
     ):
         model.eval()
         generator = torch.manual_seed(42)
-
         if not use_custom_inference:
             if model.controlnet:
-                pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
-                    "CompVis/stable-diffusion-v1-4",
-                    safety_checker=None,
-                    torch_dtype=self.cfg.dtype,
-                    controlnet=model.controlnet.controlnet,
-                    unet=model.unet,
-                    vae=model.vae.to(torch.float32),
-                    scheduler=model.train_noise_scheduler,
-                ).to(device=self.cfg.device)
+                if self.cfg.model.use_img2img_inference:
+                    pipe = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
+                        "CompVis/stable-diffusion-v1-4",
+                        safety_checker=None,
+                        torch_dtype=self.cfg.dtype,
+                        controlnet=model.controlnet.controlnet,
+                        unet=model.unet,
+                        vae=model.vae.to(torch.float32),
+                        scheduler=model.train_noise_scheduler,
+                    ).to(
+                        device=self.cfg.device
+                    )
+                else:
+                    pipe = StableDiffusionControlNetPipeline.from_pretrained(
+                        "CompVis/stable-diffusion-v1-4",
+                        safety_checker=None,
+                        torch_dtype=self.cfg.dtype,
+                        controlnet=model.controlnet.controlnet,
+                        unet=model.unet,
+                        vae=model.vae.to(torch.float32),
+                    ).to(device=self.cfg.device)
             else:
-                pipe = StableDiffusionPipeline.from_pretrained(
-                    "CompVis/stable-diffusion-v1-4",
-                    safety_checker=None,
-                    torch_dtype=self.cfg.dtype,
-                    unet=model.unet,
-                    vae=model.vae.to(torch.float32),
-                    scheduler=model.train_noise_scheduler,
-                ).to(device=self.cfg.device)
+                if self.cfg.model.use_img2img_inference:
+                    pipe = StableDiffusionImg2ImgPipeline.from_pretrained(
+                        "CompVis/stable-diffusion-v1-4",
+                        safety_checker=None,
+                        torch_dtype=self.cfg.dtype,
+                        unet=model.unet,
+                        vae=model.vae.to(torch.float32),
+                        scheduler=model.train_noise_scheduler,
+                    ).to(device=self.cfg.device)
+                else:
+                    pipe = StableDiffusionPipeline.from_pretrained(
+                        "CompVis/stable-diffusion-v1-4",
+                        safety_checker=None,
+                        torch_dtype=self.cfg.dtype,
+                        unet=model.unet,
+                        vae=model.vae.to(torch.float32),
+                        scheduler=model.train_noise_scheduler,
+                    ).to(device=self.cfg.device)
 
             if self.cfg.model.use_ip_adapter:
                 # pipe.load_ip_adapter(
@@ -359,7 +391,9 @@ class Trainer:
                         if torch.is_floating_point(
                             v[0]
                         ) and self.cfg.device != torch.device("cpu"):
-                            batch[k] = [vi.to(dtype=self.cfg.dtype) for vi in batch[k]]
+                            batch[k] = [
+                                vi.to(dtype=self.cfg.dtype) for vi in batch[k]
+                            ]
                     else:
                         batch[k] = v.to(device=self.cfg.device)
                         if torch.is_floating_point(
@@ -369,7 +403,9 @@ class Trainer:
 
                 if use_custom_inference:
                     with self.accelerator.autocast():
-                        seg_maps.extend(tensor_to_pil(batch["segmentation_mask"]))
+                        seg_maps.extend(
+                            tensor_to_pil(batch["segmentation_mask"])
+                        )
                         gt_images.extend(tensor_to_pil(batch["pixel_values"]))
                         images.extend(
                             model.validation_step(
@@ -385,7 +421,9 @@ class Trainer:
                         )
                 else:
                     encoder_hidden_states = [
-                        model.image_encoder(previous_frames_i).image_embeds.unsqueeze(
+                        model.image_encoder(
+                            previous_frames_i
+                        ).image_embeds.unsqueeze(
                             1
                         )  # --> tensor[Ni x 1 x F]
                         for previous_frames_i in batch["pixel_values_clip"]
@@ -393,11 +431,44 @@ class Trainer:
 
                     if self.cfg.model.use_lstm:
                         lstm_outputs = []
-                        for sequence_of_previous_frames in encoder_hidden_states:
+                        lstm_hn_init = torch.randn(
+                            (model.lstm.get_bidirectional + 1)
+                            * model.lstm.get_num_layers,
+                            encoder_hidden_states[0].shape[1],
+                            model.lstm.get_output_size,
+                            device=model.lstm.device,
+                            dtype=model.lstm.dtype,
+                        )
+                        lstm_cn_init = torch.randn(
+                            (model.lstm.get_bidirectional + 1)
+                            * model.lstm.get_num_layers,
+                            encoder_hidden_states[0].shape[1],
+                            model.lstm.get_hidden_size,
+                            device=model.lstm.device,
+                            dtype=model.lstm.dtype,
+                        )
+                        for (
+                            sequence_of_previous_frames
+                        ) in encoder_hidden_states:
                             output, _ = model.lstm(
-                                sequence_of_previous_frames.to(dtype=model.lstm.dtype)
+                                sequence_of_previous_frames.to(
+                                    dtype=model.lstm.dtype
+                                ),
+                                (
+                                    lstm_hn_init.to(dtype=model.lstm.dtype),
+                                    lstm_cn_init.to(dtype=model.lstm.dtype),
+                                ),
                             )
-                            lstm_outputs.append(output[-1])
+                            lstm_outputs.append(
+                                (
+                                    output[-1][: output[-1].shape[0] / 2]
+                                    + output[0][output[-1].shape[0] / 2 :]
+                                )
+                                / 2
+                                if model.lstm.get_bidirectional
+                                else output[-1]
+                            )
+                            # lstm_outputs.append(output.mean(dim=0))
                         encoder_hidden_states = torch.stack(lstm_outputs)
                     else:
                         encoder_hidden_states = torch.stack(
@@ -426,30 +497,58 @@ class Trainer:
                             batch["pixel_values"],
                             batch["pixel_values_prev"],
                         ):
-                            images.extend(
-                                pipe(
-                                    prompt_embeds=encoder_hidden_state.unsqueeze(0),
-                                    negative_prompt_embeds=torch.zeros_like(
-                                        encoder_hidden_state
-                                    ).unsqueeze(0),
-                                    image=tensor_to_pil(prev_img),
-                                    control_image=tensor_to_pil(segmentation_mask),
-                                    ip_adapter_image=(
-                                        # TODO: this is wrong, we must use the
-                                        # previous image here or some average
-                                        # embeding of the previous images directly
-                                        # into `ip_adapter_image_embeds``
-                                        tensor_to_pil(gt_image)
-                                        if self.cfg.model.use_ip_adapter
-                                        else None
-                                    ),
-                                    num_inference_steps=100,
-                                    guidance_scale=guidance_scale,
-                                    generator=generator,
-                                    strength=0.8,
-                                ).images
-                            )
-
+                            if self.cfg.model.use_img2img_inference:
+                                images.extend(
+                                    pipe(
+                                        prompt_embeds=encoder_hidden_state.unsqueeze(
+                                            0
+                                        ),
+                                        negative_prompt_embeds=torch.zeros_like(
+                                            encoder_hidden_state
+                                        ).unsqueeze(0),
+                                        image=tensor_to_pil(prev_img),
+                                        control_image=tensor_to_pil(
+                                            segmentation_mask
+                                        ),
+                                        ip_adapter_image=(
+                                            # TODO: this is wrong, we must use the
+                                            # previous image here or some average
+                                            # embeding of the previous images directly
+                                            # into `ip_adapter_image_embeds``
+                                            tensor_to_pil(gt_image)
+                                            if self.cfg.model.use_ip_adapter
+                                            else None
+                                        ),
+                                        num_inference_steps=100,
+                                        guidance_scale=guidance_scale,
+                                        generator=generator,
+                                        strength=0.6,
+                                    ).images
+                                )
+                            else:
+                                images.extend(
+                                    pipe(
+                                        prompt_embeds=encoder_hidden_state.unsqueeze(
+                                            0
+                                        ),
+                                        negative_prompt_embeds=torch.zeros_like(
+                                            encoder_hidden_state
+                                        ).unsqueeze(0),
+                                        image=tensor_to_pil(segmentation_mask),
+                                        ip_adapter_image=(
+                                            # TODO: this is wrong, we must use the
+                                            # previous image here or some average
+                                            # embeding of the previous images directly
+                                            # into `ip_adapter_image_embeds``
+                                            tensor_to_pil(gt_image)
+                                            if self.cfg.model.use_ip_adapter
+                                            else None
+                                        ),
+                                        num_inference_steps=300,
+                                        guidance_scale=guidance_scale,
+                                        generator=generator,
+                                    ).images
+                                )
         grid = image_grid(
             [val for tup in zip(images, gt_images, seg_maps) for val in tup],
             len(images),
