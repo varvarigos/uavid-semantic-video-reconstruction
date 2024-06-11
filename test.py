@@ -84,7 +84,8 @@ def main(cfg: TrainerConfig) -> None:
 
     # val_dataloader ....
     # 0, 2, 5, 7, 10, 12, 15, ..., 57, 60
-    indices = [2 * i + i // 2 for i in range(25)]
+    # indices = [2 * i + i // 2 for i in range(25)]
+    indices = list(range(61))
     val_dataset = UavidDatasetWithTransform(
         path=cfg.dataset.dataset_path / "uavid_val",
         size=cfg.dataset.resolution,

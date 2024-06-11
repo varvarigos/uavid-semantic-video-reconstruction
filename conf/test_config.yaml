@@ -2,7 +2,7 @@ hydra:
   job:
     chdir: True
   run:
-    dir: outputs/test/fixed/averaging/2024-05-25__03-48-51/checkpoint_12/guidance_3_imgvar_steps_300_more/
+    dir: outputs/test/fixed/averaging/2024-06-10__05-44-56/checkpoints/checkpoint_14/img2img_refinement/
     # dir: outputs/test/fixed/ground_truth/${now:%Y-%m-%d__%H-%M-%S}
 
 _target_: config.TrainerConfig
@@ -34,7 +34,7 @@ dataset:
   dataset_path: "/teamspace/studios/this_studio/uavid"
   resolution: 512
   center_crop: True
-  max_previous_frames: null # 1
+  max_previous_frames: null
   oracle: False
 
 dataloader:
@@ -50,14 +50,16 @@ model:
   image_encoder_revision: "v2.0"
   use_control_net: True
   lora_rank: 4
-  use_ip_adapter: False
+  use_ip_adapter: True
   ip_adapter_scale: 0.8
   use_mapper: False
   use_lstm: False
   use_img2img_inference: False
+  use_img2img_refinement: True
+
 
 use_custom_inference: False
-guidance_scale: 3
+guidance_scale: 2
 
 use_checkpoint: "/teamspace/studios/this_studio/outputs/fixed/averaging/2024-05-25__03-48-51/checkpoints/checkpoint_12"
 

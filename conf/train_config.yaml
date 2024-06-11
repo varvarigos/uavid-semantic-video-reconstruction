@@ -2,13 +2,13 @@ hydra:
   job:
     chdir: True
   run:
-    dir: outputs/fixed/ground_truth_upper_bound/${now:%Y-%m-%d__%H-%M-%S}
+    dir: outputs/fixed/averaging/${now:%Y-%m-%d__%H-%M-%S}
 
 _target_: config.TrainerConfig
 
 eval_script:
     _target_: config.EvalConfig
-    images_path: "/teamspace/studios/this_studio/outputs/test/fixed/averaging/2024-05-25__03-48-51/checkpoint_12/guidance_2_0p7img2img_steps300/predictions/step_0.png"
+    images_path: "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/combined_sd_1_5/checkpoints/checkpoint_0/ip_adapter_plus/predictions/step_0.png"
     evaluate: True
 
 mapper:
@@ -81,21 +81,23 @@ model:
   train_control_net: True
   use_control_net: True
   lora_rank: 4
-  use_ip_adapter: False
+  use_ip_adapter: True
   ip_adapter_scale: 0.8
   use_mapper: False
   use_lstm: False
   use_img2img_inference: False
+  use_img2img_refinement: False
 
 gradient_accumulation_steps: 1
 num_train_epochs: 350
 max_train_steps: null
-use_checkpoint: null # "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/2024-05-25__01-08-07/checkpoints/checkpoint_0"
+use_checkpoint: "/teamspace/studios/this_studio/outputs/fixed/averaging/2024-05-25__03-48-51/checkpoints/checkpoint_13"
 checkpointing_steps: 750
 checkpoints_total_limit: null
 prediction_steps: 100
 predictions_dir_name: "predictions"
 use_custom_inference: False
+guidance_scale: 2
 
 max_grad_norm: 1.0
 

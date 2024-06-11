@@ -117,6 +117,7 @@ class ModelConfig:
     use_mapper: bool = True
     use_lstm: bool = True
     use_img2img_inference: bool = False
+    use_img2img_refinement: bool = False
 
 
 @dataclass

@@ -1,3 +1,4 @@
+import copy
 from dataclasses import asdict
 
 import torch
@@ -38,7 +39,7 @@ class Trainer:
 
         # Uncomment for loading a checkpoint
         # self.accelerator.load_state(
-        #     "/teamspace/studios/this_studio/outputs/single_frame/controlnet_only/2024-05-15__13-30-02/checkpoints/checkpoint_2"
+        #     "/teamspace/studios/this_studio/outputs/fixed/averaging/2024-05-25__03-48-51/checkpoints/checkpoint_12"
         # )
 
         self.cfg.post_accelerator_init(self.accelerator)
@@ -244,6 +245,7 @@ class Trainer:
                                 model=model,
                                 val_dataloader=val_dataloder,
                                 use_custom_inference=self.cfg.use_custom_inference,
+                                guidance_scale=self.cfg.guidance_scale,
                             )
                             model.train()
                 lrs = lr_scheduler.get_lr()
@@ -310,7 +312,7 @@ class Trainer:
         output_name: str | None = None,
         use_custom_inference: bool = True,
         no_progress_bar: bool = True,
-        guidance_scale: float = 1,
+        guidance_scale: float = 2,
     ):
         model.eval()
         generator = torch.manual_seed(42)
@@ -325,6 +327,27 @@ class Trainer:
                         unet=model.unet,
                         vae=model.vae.to(torch.float32),
                         scheduler=model.train_noise_scheduler,
+                    ).to(
+                        device=self.cfg.device
+                    )
+                elif self.cfg.model.use_img2img_refinement:
+                    pipe = StableDiffusionControlNetPipeline.from_pretrained(
+                        "CompVis/stable-diffusion-v1-4",
+                        safety_checker=None,
+                        torch_dtype=self.cfg.dtype,
+                        controlnet=model.controlnet.controlnet,
+                        unet=model.unet,
+                        vae=model.vae.to(torch.float32),
+                    ).to(device=self.cfg.device)
+
+                    pipe_refinement = StableDiffusionControlNetImg2ImgPipeline.from_pretrained(
+                        "CompVis/stable-diffusion-v1-4",
+                        safety_checker=None,
+                        torch_dtype=self.cfg.dtype,
+                        controlnet=copy.deepcopy(model.controlnet.controlnet),
+                        unet=copy.deepcopy(model.unet),
+                        vae=copy.deepcopy(model.vae.to(torch.float32)),
+                        scheduler=copy.deepcopy(model.train_noise_scheduler),
                     ).to(
                         device=self.cfg.device
                     )
@@ -347,6 +370,27 @@ class Trainer:
                         vae=model.vae.to(torch.float32),
                         scheduler=model.train_noise_scheduler,
                     ).to(device=self.cfg.device)
+                elif self.cfg.model.use_img2img_refinement:
+                    pipe = StableDiffusionPipeline.from_pretrained(
+                        "CompVis/stable-diffusion-v1-4",
+                        safety_checker=None,
+                        torch_dtype=self.cfg.dtype,
+                        unet=model.unet,
+                        vae=model.vae.to(torch.float32),
+                    ).to(device=self.cfg.device)
+
+                    pipe_refinement = (
+                        StableDiffusionImg2ImgPipeline.from_pretrained(
+                            "CompVis/stable-diffusion-v1-4",
+                            safety_checker=None,
+                            torch_dtype=self.cfg.dtype,
+                            unet=copy.deepcopy(model.unet),
+                            vae=copy.deepcopy(model.vae.to(torch.float32)),
+                            scheduler=copy.deepcopy(
+                                model.train_noise_scheduler
+                            ),
+                        ).to(device=self.cfg.device)
+                    )
                 else:
                     pipe = StableDiffusionPipeline.from_pretrained(
                         "CompVis/stable-diffusion-v1-4",
@@ -378,6 +422,7 @@ class Trainer:
                 "lambdalabs/sd-image-variations-diffusers",
                 subfolder="scheduler",
             )
+        initial_preds = []
         images = []
         gt_images = []
         seg_maps = []
@@ -411,7 +456,7 @@ class Trainer:
                             model.validation_step(
                                 batch,
                                 noise_scheduler=scheduler,
-                                num_inference_steps=100,
+                                num_inference_steps=200,
                                 guidance_scale=guidance_scale,
                                 device=self.cfg.device,
                                 dtype=self.cfg.dtype,
@@ -485,6 +530,8 @@ class Trainer:
                     seg_maps.extend(tensor_to_pil(batch["segmentation_mask"]))
                     gt_images.extend(tensor_to_pil(batch["pixel_values"]))
                     pipe.set_progress_bar_config(disable=True)
+                    if self.cfg.model.use_img2img_refinement:
+                        pipe_refinement.set_progress_bar_config(disable=True)
                     with self.accelerator.autocast():
                         for (
                             encoder_hidden_state,
@@ -509,6 +556,8 @@ class Trainer:
                                         image=tensor_to_pil(prev_img),
                                         control_image=tensor_to_pil(
                                             segmentation_mask
+                                            if model.controlnet.controlnet
+                                            else None
                                         ),
                                         ip_adapter_image=(
                                             # TODO: this is wrong, we must use the
@@ -519,10 +568,57 @@ class Trainer:
                                             if self.cfg.model.use_ip_adapter
                                             else None
                                         ),
-                                        num_inference_steps=100,
+                                        num_inference_steps=300,
                                         guidance_scale=guidance_scale,
                                         generator=generator,
-                                        strength=0.6,
+                                        strength=0.8,
+                                    ).images
+                                )
+                            elif self.cfg.model.use_img2img_refinement:
+                                initial_preds = pipe(
+                                    prompt_embeds=encoder_hidden_state.unsqueeze(
+                                        0
+                                    ),
+                                    negative_prompt_embeds=torch.zeros_like(
+                                        encoder_hidden_state
+                                    ).unsqueeze(0),
+                                    image=tensor_to_pil(
+                                        segmentation_mask
+                                        if model.controlnet.controlnet
+                                        else None
+                                    ),
+                                    ip_adapter_image=(
+                                        # TODO: this is wrong, we must use the
+                                        # previous image here or some average
+                                        # embeding of the previous images directly
+                                        # into `ip_adapter_image_embeds``
+                                        tensor_to_pil(gt_image)
+                                        if self.cfg.model.use_ip_adapter
+                                        else None
+                                    ),
+                                    num_inference_steps=250,
+                                    guidance_scale=guidance_scale,
+                                    generator=generator,
+                                ).images
+
+                                images.extend(
+                                    pipe_refinement(
+                                        prompt_embeds=encoder_hidden_state.unsqueeze(
+                                            0
+                                        ),
+                                        negative_prompt_embeds=torch.zeros_like(
+                                            encoder_hidden_state
+                                        ).unsqueeze(0),
+                                        image=initial_preds,
+                                        control_image=tensor_to_pil(
+                                            segmentation_mask
+                                            if model.controlnet.controlnet
+                                            else None
+                                        ),
+                                        num_inference_steps=250,
+                                        guidance_scale=guidance_scale,
+                                        generator=generator,
+                                        strength=0.8,
                                     ).images
                                 )
                             else:
@@ -534,7 +630,11 @@ class Trainer:
                                         negative_prompt_embeds=torch.zeros_like(
                                             encoder_hidden_state
                                         ).unsqueeze(0),
-                                        image=tensor_to_pil(segmentation_mask),
+                                        image=tensor_to_pil(
+                                            segmentation_mask
+                                            if model.controlnet.controlnet
+                                            else None
+                                        ),
                                         ip_adapter_image=(
                                             # TODO: this is wrong, we must use the
                                             # previous image here or some average
@@ -544,7 +644,7 @@ class Trainer:
                                             if self.cfg.model.use_ip_adapter
                                             else None
                                         ),
-                                        num_inference_steps=300,
+                                        num_inference_steps=250,
                                         guidance_scale=guidance_scale,
                                         generator=generator,
                                     ).images
@@ -566,13 +666,6 @@ class Trainer:
             )
         )
 
-        if self.cfg.model.use_ip_adapter and not use_custom_inference:
-            pipe.unload_ip_adapter()
-
-        model.vae.to(self.cfg.dtype)
-        return grid
-        model.vae.to(self.cfg.dtype)
-        return grid
         if self.cfg.model.use_ip_adapter and not use_custom_inference:
             pipe.unload_ip_adapter()
 
