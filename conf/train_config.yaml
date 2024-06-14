@@ -2,13 +2,13 @@ hydra:
   job:
     chdir: True
   run:
-    dir: outputs/fixed/averaging/${now:%Y-%m-%d__%H-%M-%S}
+    dir: "outputs/${now:%Y-%m-%d__%H-%M-%S}/"
 
 _target_: config.TrainerConfig
 
 eval_script:
     _target_: config.EvalConfig
-    images_path: "/teamspace/studios/this_studio/outputs/fixed/ground_truth_upper_bound/combined_sd_1_5/checkpoints/checkpoint_0/ip_adapter_plus/predictions/step_0.png"
+    images_path: "outputs/reds/pred.png"
     evaluate: True
 
 mapper:
@@ -32,14 +32,14 @@ lstm:
   dropout: 0.2
   bidirectional: False
   proj_size: 0
-  train: False
+  train: True
 
 lr:
   _target_: config.LearningRateConfig
   unet: 1e-4
   controlnet: 2e-4
   mapper: 2e-4
-  lstm: 4e-3
+  lstm: 2e-4
   scale: True
 
 lr_scheduler:
@@ -81,17 +81,17 @@ model:
   train_control_net: True
   use_control_net: True
   lora_rank: 4
-  use_ip_adapter: True
+  use_ip_adapter: False
   ip_adapter_scale: 0.8
   use_mapper: False
-  use_lstm: False
+  use_lstm: True
   use_img2img_inference: False
   use_img2img_refinement: False
 
 gradient_accumulation_steps: 1
-num_train_epochs: 350
+num_train_epochs: 500
 max_train_steps: null
-use_checkpoint: "/teamspace/studios/this_studio/outputs/fixed/averaging/2024-05-25__03-48-51/checkpoints/checkpoint_13"
+use_checkpoint: null
 checkpointing_steps: 750
 checkpoints_total_limit: null
 prediction_steps: 100

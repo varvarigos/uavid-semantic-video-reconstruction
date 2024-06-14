@@ -84,8 +84,8 @@ def main(cfg: TrainerConfig) -> None:
 
     # val_dataloader ....
     # 0, 2, 5, 7, 10, 12, 15, ..., 57, 60
-    # indices = [2 * i + i // 2 for i in range(25)]
-    indices = list(range(61))
+    indices = [2 * i + i // 2 for i in range(25)]
+    # indices = list(range(61))
     val_dataset = UavidDatasetWithTransform(
         path=cfg.dataset.dataset_path / "uavid_val",
         size=cfg.dataset.resolution,
@@ -129,30 +129,6 @@ def main(cfg: TrainerConfig) -> None:
     if cfg.model.train_unet:
         model.unet = prepared.pop(0)
     val_dataloader = prepared.pop(0)
-
-    # # Prepare everything with our `accelerator`.
-    # if cfg.model.train_control_net and not cfg.model.train_unet:
-    #     (
-    #         model.controlnet.controlnet,
-    #         val_dataloader,
-    #     ) = trainer.accelerator.prepare(
-    #         model.controlnet.controlnet,
-    #         val_dataloader,
-    #     )
-    # elif cfg.model.train_unet and not cfg.model.train_control_net:
-    #     model.unet, val_dataloader = trainer.accelerator.prepare(
-    #         model.unet, val_dataloader
-    #     )
-    # else:
-    #     (
-    #         model.unet,
-    #         model.controlnet.controlnet,
-    #         val_dataloader,
-    #     ) = trainer.accelerator.prepare(
-    #         model.unet,
-    #         model.controlnet.controlnet,
-    #         val_dataloader,
-    #     )
 
     trainer.cfg.post_prepare_init(val_dataloader)
 

@@ -18,23 +18,10 @@ from models import (
 )
 from trainer import Trainer
 
-# cs = ConfigStore.instance()
-# cs.store(name="base_trainer", node=TrainerConfig)xw
-# cs.store(name="base_model", node=ModelConfig)
-# cs.store(name="base_learning_rate", node=LearningRateConfig)
-# cs.store(name="base_lr_scheduler", node=LRSchedulerConfig)
-# cs.store(name="base_optimizer", node=OptimizerConfig)
-# cs.store(name="base_dataset", node=DatasetConfig)
-# cs.store(name="base_dataloader", node=DataloaderConfig)
-
 
 @hydra.main(version_base=None, config_path="conf", config_name="train_config")
 def main(cfg: TrainerConfig) -> None:
     cfg = instantiate(cfg)
-
-    # copy the confa env yml
-    # create the conda env yml (conda export > conda_env.yml)
-    # exit()
 
     # Dataset
     transform = A.ReplayCompose(

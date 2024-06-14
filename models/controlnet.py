@@ -68,25 +68,3 @@ class ControlNet(torch.nn.Module):
 
     def requires_grad_(self, requires_grad=True):
         self.controlnet.requires_grad_(requires_grad)
-
-    # def __setattr__(self, name, value):
-    #     if name == "controlnet":
-    #         raise AttributeError("You should probably not be here.")
-    #         # super().__setattr__(name, value)
-    #     elif name == "trainable_parameters":
-    #         raise AttributeError("You should probably not be here2.")
-    #         # super().__setattr__(name, value)
-    #     else:
-    #         setattr(self.controlnet, name, value)
-
-
-# def wrapped__getattr__(self, name):
-#     if name == "trainable_parameters":
-#         return self.trainable_parameters
-#     if name == "controlnet":
-#         return self.controlnet
-#     return getattr(self.controlnet, name)
-
-
-# ControlNet.original__get_attr__ = ControlNet.__getattr__
-# ControlNet.__getattr__ = wrapped__getattr__

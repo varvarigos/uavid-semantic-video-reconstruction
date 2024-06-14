@@ -1,6 +1,9 @@
 import hydra
 from hydra.utils import instantiate
-from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
+from torchmetrics.image import (
+    PeakSignalNoiseRatio,
+    StructuralSimilarityIndexMeasure,
+)
 from torchvision import transforms
 
 from config import EvalConfig

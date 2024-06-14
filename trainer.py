@@ -1,5 +1,6 @@
 import copy
 from dataclasses import asdict
+from pathlib import Path
 
 import torch
 from accelerate import Accelerator
@@ -17,6 +18,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from config import TrainerConfig
+from models import LSTMModel
 from utils import get_parameters_stats, image_grid, tensor_to_pil
 
 
@@ -52,6 +54,28 @@ class Trainer:
             "uavid_frame_prediction",
             config={k: str(v) for k, v in asdict(self.cfg).items()},
         )
+
+        if self.cfg.lstm.train:
+            self.accelerator.register_save_state_pre_hook(self.save_lstm_hook)
+            self.accelerator.register_load_state_pre_hook(self.load_lstm_hook)
+
+    def save_lstm_hook(self, models, weights, output_dir):
+        if self.accelerator.is_main_process:
+            for i, model in enumerate(models):
+                if isinstance(model, LSTMModel):
+                    # make sure to pop weight so that corresponding model is not saved again
+                    lstm_weights = weights.pop(i)
+                    torch.save(lstm_weights, Path(output_dir) / "lstm.pth")
+
+    def load_lstm_hook(self, models, input_dir):
+        to_remove = []
+        for i, model in enumerate(models):
+            if isinstance(model, LSTMModel):
+                model.load_state_dict(torch.load(Path(input_dir) / "lstm.pth"))
+                to_remove.append(i)
+
+        for i in to_remove:
+            models.pop(i)
 
     def fit(
         self,
@@ -133,39 +157,6 @@ class Trainer:
         self.global_step = 0
         first_epoch = 0
 
-        # Potentially load in the weights and states from a previous save
-        # TODO: for sure this needs debugging to work
-        # if self.cfg.use_checkpoint:
-        #     if self.cfg.use_checkpoint != "latest":
-        #         # path = os.path.basename(use_checkpoint)
-        #         # do the same for Path type paths
-        #         path = self.cfg.use_checkpoint.name
-        #     else:
-        #         # Get the mos recent checkpoint
-        #         # dirs = os.listdir(output_dir)
-        #         # do the same for Path type paths
-        #         dirs = output_dir.iterdir()
-
-        #         dirs = [d for d in dirs if d.startswith("checkpoint")]
-        #         dirs = sorted(dirs, key=lambda x: int(x.split("-")[1]))
-        #         path = dirs[-1] if len(dirs) > 0 else None
-
-        #     if path is None:
-        #         accelerator.print(
-        #             f"Checkpoint '{self.cfg.use_checkpoint}' does not exist. Starting a new training run."
-        #         )
-        #         self.cfg.use_checkpoint = None
-        #         initial_global_step = 0
-        #     else:
-        #         accelerator.print(f"Resuming from checkpoint {path}")
-        #         accelerator.load_state("lora-dreambooth-model/checkpoint-2000")
-        #         # accelerator.load_state(os.path.join(output_dir, path))
-        #         # accelerator.load_state('/content/lora-dreambooth-model/checkpoint-2000')
-        #         global_step = int(path.split("-")[1])
-
-        #         initial_global_step = global_step
-        #         first_epoch = global_step // num_update_steps_per_epoch
-        # else:
         initial_global_step = 0
 
         progress_bar = tqdm(
@@ -183,14 +174,6 @@ class Trainer:
 
         for self.epoch in range(first_epoch, self.cfg.num_train_epochs):
             model.train()
-
-            # if self.epoch < 10:
-            #     optimizer.param_groups[0]["lr"] = 0
-            #     optimizer.param_groups[1]["lr"] = 0
-            # else:
-            #     optimizer.param_groups[0]["lr"] = self.cfg.lr.controlnet
-            #     optimizer.param_groups[1]["lr"] = self.cfg.lr.unet
-            #     # lr_scheduler.optimizers[0].param_groups[2]['lr'] = 0
 
             total_loss = 0
             for step, batch in enumerate(train_dataloader):
@@ -290,18 +273,6 @@ class Trainer:
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
             self.accelerator.save_state()
-            # TODO: fix this
-            # if train_unet:
-            #     unet_temp = self.accelerator.unwrap_model(unet)
-            #     unet_lora_layers = unet_lora_state_dict(unet_temp)
-
-            #     LoraLoaderMixin.save_lora_weights(
-            #         save_directory=output_unet_dir,
-            #         unet_lora_layers=unet_lora_layers,
-            #     )
-            # if train_control_net:
-            #     controlnet_temp = accelerator.unwrap_model(controlnet)
-            #     controlnet_temp.save_pretrained(output_controlnet_dir)
 
         self.accelerator.end_training()
 
@@ -513,7 +484,6 @@ class Trainer:
                                 if model.lstm.get_bidirectional
                                 else output[-1]
                             )
-                            # lstm_outputs.append(output.mean(dim=0))
                         encoder_hidden_states = torch.stack(lstm_outputs)
                     else:
                         encoder_hidden_states = torch.stack(
@@ -559,12 +529,8 @@ class Trainer:
                                             if model.controlnet.controlnet
                                             else None
                                         ),
-                                        ip_adapter_image=(
-                                            # TODO: this is wrong, we must use the
-                                            # previous image here or some average
-                                            # embeding of the previous images directly
-                                            # into `ip_adapter_image_embeds``
-                                            tensor_to_pil(gt_image)
+                                        ip_adapter_image_embeds=(
+                                            encoder_hidden_state.unsqueeze(0)
                                             if self.cfg.model.use_ip_adapter
                                             else None
                                         ),
@@ -670,4 +636,5 @@ class Trainer:
             pipe.unload_ip_adapter()
 
         model.vae.to(self.cfg.dtype)
+
         return grid

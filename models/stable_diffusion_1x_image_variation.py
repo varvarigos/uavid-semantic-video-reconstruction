@@ -56,7 +56,9 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
 
     def training_step(self, batch, batch_idx):
         # Convert images to latent space
-        model_input = self.vae.encode(batch["pixel_values"]).latent_dist.sample()
+        model_input = self.vae.encode(
+            batch["pixel_values"]
+        ).latent_dist.sample()
         model_input = model_input * self.vae.config.scaling_factor
 
         # Sample noise that we'll add to the latents
@@ -135,16 +137,21 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
             down_block_res_samples, mid_block_res_sample = self.controlnet(
                 noisy_model_input,
                 timesteps,
-                encoder_hidden_states=encoder_hidden_states.to(self.controlnet.dtype),
+                encoder_hidden_states=encoder_hidden_states.to(
+                    self.controlnet.dtype
+                ),
                 controlnet_cond=current_segmentation_map,
                 return_dict=False,
             )
             noise_pred = self.unet(
                 noisy_model_input.to(dtype=torch.float16),
                 timesteps,
-                encoder_hidden_states=encoder_hidden_states.to(dtype=torch.float16),
+                encoder_hidden_states=encoder_hidden_states.to(
+                    dtype=torch.float16
+                ),
                 down_block_additional_residuals=[
-                    sample.to(dtype=torch.float16) for sample in down_block_res_samples
+                    sample.to(dtype=torch.float16)
+                    for sample in down_block_res_samples
                 ],
                 mid_block_additional_residual=mid_block_res_sample.to(
                     dtype=torch.float16
@@ -156,28 +163,6 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
                 timesteps,
                 encoder_hidden_states=encoder_hidden_states,
             ).sample
-
-        # i = 0
-        # for t in timesteps:
-        #     if i == 0:
-        #         model_input = self.train_noise_scheduler.step(
-        #             model_output=noise_pred, sample=model_input, timestep=int(t)
-        #         )
-        #         i += 1
-        #     else:
-        #         model_input = self.train_noise_scheduler.step(
-        #             model_output=noise_pred,
-        #             sample=model_input[0],
-        #             timestep=int(t),
-        #         )
-
-        # model_input = model_input[0] / self.vae.config.scaling_factor
-        # model_input = self.vae.decode(
-        #     model_input.to(dtype=torch.float16)[0].unsqueeze(0)
-        # ).sample
-        # from utils import tensor_to_pil
-
-        # tensor_to_pil(model_input[0]).save("pred.png")
 
         return F.mse_loss(noise_pred.float(), noise.float(), reduction="mean")
 
@@ -208,9 +193,9 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
             64,
             64,
         )
-        latents = torch.randn(shape, generator=generator, device="cpu", dtype=dtype).to(
-            device
-        )
+        latents = torch.randn(
+            shape, generator=generator, device="cpu", dtype=dtype
+        ).to(device)
         # scale the initial noise by the standard deviation required by the scheduler
         latents = latents * noise_scheduler.init_noise_sigma
 
@@ -218,7 +203,9 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
         for i, t in enumerate(tqdm(timesteps, disable=no_progress_bar)):
             # expand the latents if we are doing classifier free guidance
             latent_model_input = (
-                torch.cat([latents] * 2) if do_classifier_free_guidance else latents
+                torch.cat([latents] * 2)
+                if do_classifier_free_guidance
+                else latents
             )
             latent_model_input = noise_scheduler.scale_model_input(
                 latent_model_input, t
@@ -239,7 +226,8 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
                 lstm_cn = []
                 lstm_hn.append(
                     torch.zeros(
-                        (self.lstm.get_bidirectional + 1) * self.lstm.get_num_layers,
+                        (self.lstm.get_bidirectional + 1)
+                        * self.lstm.get_num_layers,
                         encoder_hidden_states[0].shape[1],
                         self.lstm.get_output_size,
                         device=self.lstm.device,
@@ -248,7 +236,8 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
                 )
                 lstm_cn.append(
                     torch.zeros(
-                        (self.lstm.get_bidirectional + 1) * self.lstm.get_num_layers,
+                        (self.lstm.get_bidirectional + 1)
+                        * self.lstm.get_num_layers,
                         encoder_hidden_states[0].shape[1],
                         self.lstm.get_hidden_size,
                         device=self.lstm.device,
@@ -269,7 +258,9 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
                 encoder_hidden_states = torch.stack(lstm_outputs)
             else:
                 encoder_hidden_states = torch.stack(
-                    [i.mean(dim=0) for i in encoder_hidden_states]  # tensor[1 x F]
+                    [
+                        i.mean(dim=0) for i in encoder_hidden_states
+                    ]  # tensor[1 x F]
                 )  # tensor[batch_size x 1 x F]
 
             if self.mapper:
@@ -288,7 +279,9 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
 
             if self.controlnet:
                 down_block_res_samples, mid_block_res_sample = self.controlnet(
-                    latent_model_input.to(dtype=self.controlnet.dtype, device="cuda"),
+                    latent_model_input.to(
+                        dtype=self.controlnet.dtype, device="cuda"
+                    ),
                     t,
                     encoder_hidden_states=encoder_hidden_states.to(
                         dtype=self.controlnet.dtype, device="cuda"
@@ -303,12 +296,6 @@ class StableDiffusion1xImageVariation(StableDiffusion1x):
                     ),
                     return_dict=False,
                 )
-                # down_block_res_samples = [
-                #     torch.cat([torch.zeros_like(d), d]) for d in down_block_res_samples
-                # ]
-                # mid_block_res_sample = torch.cat(
-                #     [torch.zeros_like(mid_block_res_sample), mid_block_res_sample]
-                # )
 
                 noise_pred = self.unet(
                     latent_model_input.to(dtype=torch.float16, device="cuda"),
